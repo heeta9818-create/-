@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Card, EmptyState, PageHeader, StatusBadge } from "@/components/ui";
+import { requireUser } from "@/lib/auth/user";
 import { getSiteRepository, isSupabaseConfigured } from "@/lib/data/repository";
 import { SITE_STATUS_LABEL, type Site } from "@/lib/domain/site";
 import { daysFromToday, shortDate, todayISO, won } from "@/lib/format";
@@ -35,8 +36,9 @@ function ScheduleRow({ site }: { site: Site }) {
 }
 
 export default async function HomePage() {
+  const user = await requireUser();
   const repo = await getSiteRepository();
-  const sites = await repo.list();
+  const sites = await repo.list(user.id);
 
   const schedule = upcoming(sites);
   const today = schedule.filter((site) => site.scheduledOn === todayISO());
@@ -123,8 +125,9 @@ export default async function HomePage() {
 
         {!isSupabaseConfigured() ? (
           <p className="rounded-lg border border-dashed border-line px-4 py-3 text-xs text-muted">
-            지금은 로컬 파일(<code>.data/sites.json</code>)에 저장하는 개발 모드입니다.
-            Supabase 환경변수를 넣으면 자동으로 클라우드 저장으로 바뀝니다.
+            로그인이 꺼진 개발 모드입니다. 데이터는{" "}
+            <code>.data/sites.json</code>에 저장됩니다. Supabase 환경변수를
+            넣으면 로그인과 클라우드 저장이 함께 켜집니다.
           </p>
         ) : null}
       </div>

@@ -11,57 +11,79 @@ import type { SiteRepository } from "./repository";
 const DATA_DIR = path.join(process.cwd(), ".data");
 const DATA_FILE = path.join(DATA_DIR, "sites.json");
 
-async function readAll(): Promise<Site[]> {
+/** 파일에 실제로 저장되는 형태. 도메인 모델에 소유자를 붙인 것. */
+export interface StoredSite extends Site {
+  ownerId: string;
+}
+
+async function readAll(): Promise<StoredSite[]> {
   try {
     const raw = await readFile(DATA_FILE, "utf8");
-    return JSON.parse(raw) as Site[];
+    return JSON.parse(raw) as StoredSite[];
   } catch {
     return [];
   }
 }
 
-async function writeAll(sites: Site[]): Promise<void> {
+async function writeAll(sites: StoredSite[]): Promise<void> {
   await mkdir(DATA_DIR, { recursive: true });
   await writeFile(DATA_FILE, JSON.stringify(sites, null, 2), "utf8");
 }
 
+/** 저장 형태에서 소유자를 떼어내 도메인 모델로 만든다. */
+export function toSite(stored: StoredSite): Site {
+  const { ownerId: _ownerId, ...site } = stored;
+  return site;
+}
+
 export const fileSiteRepository: SiteRepository = {
-  async list() {
+  async list(ownerId) {
     const sites = await readAll();
-    return sites.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return sites
+      .filter((site) => site.ownerId === ownerId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map(toSite);
   },
 
-  async get(id) {
+  async get(id, ownerId) {
     const sites = await readAll();
-    return sites.find((site) => site.id === id) ?? null;
+    const found = sites.find(
+      (site) => site.id === id && site.ownerId === ownerId,
+    );
+    return found ? toSite(found) : null;
   },
 
-  async create(input: SiteInput, estimateTotal: number) {
+  async create(ownerId, input: SiteInput, estimateTotal: number) {
     const sites = await readAll();
-    const site: Site = {
+    const stored: StoredSite = {
       ...input,
       id: randomUUID(),
+      ownerId,
       createdAt: new Date().toISOString(),
       estimateTotal,
     };
-    sites.push(site);
+    sites.push(stored);
     await writeAll(sites);
-    return site;
+    return toSite(stored);
   },
 
-  async update(id, input, estimateTotal) {
+  async update(id, ownerId, input, estimateTotal) {
     const sites = await readAll();
-    const index = sites.findIndex((site) => site.id === id);
+    const index = sites.findIndex(
+      (site) => site.id === id && site.ownerId === ownerId,
+    );
     if (index === -1) return null;
 
-    const updated: Site = { ...sites[index], ...input, estimateTotal };
+    const updated: StoredSite = { ...sites[index], ...input, estimateTotal };
     sites[index] = updated;
     await writeAll(sites);
-    return updated;
+    return toSite(updated);
   },
 
-  async remove(id) {
+  async remove(id, ownerId) {
     const sites = await readAll();
-    await writeAll(sites.filter((site) => site.id !== id));
+    await writeAll(
+      sites.filter((site) => !(site.id === id && site.ownerId === ownerId)),
+    );
   },
 };

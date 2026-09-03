@@ -1,8 +1,13 @@
 import { PageHeader } from "@/components/ui";
 import { SiteForm } from "@/components/site-form";
+import { requireUser } from "@/lib/auth/user";
 import { createSite } from "../actions";
 
-export default function NewSitePage() {
+export const dynamic = "force-dynamic";
+
+export default async function NewSitePage() {
+  await requireUser();
+
   return (
     <>
       <PageHeader

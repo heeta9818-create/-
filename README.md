@@ -3,8 +3,9 @@
 도배 기사·사장님을 위한 **현장 일정 + 견적 관리** 웹앱.
 현장에서 폰으로 쓰는 걸 전제로 만들었다.
 
-## 지금 되는 것 (v0)
+## 지금 되는 것
 
+- **로그인** — 이메일/비밀번호 가입·로그인, 카카오 로그인(설정 시), 사용자별 데이터 격리
 - **현장 관리** — 고객·주소·평수·벽지·시공 예정일·진행 상태를 등록/수정/삭제
 - **자동 견적** — 현장을 등록하면 물량과 금액이 바로 잡힌다
 - **견적 계산기** — 평수 간이 산출 / 실측 산출, 단가·마진·부가세 조정
@@ -18,10 +19,11 @@ npm install
 npm run dev      # http://localhost:3000
 ```
 
-Supabase 설정 없이도 그냥 돈다. 데이터는 `.data/sites.json`에 쌓인다.
+Supabase 설정 없이도 그냥 돈다. 이때는 **로그인이 꺼진 개발 모드**로 뜨고
+(고정된 개발용 계정), 데이터는 `.data/sites.json`에 쌓인다.
 
 ```bash
-npm test         # 견적 엔진 · 폼 검증 테스트 (27개)
+npm test         # 48개 — 견적 엔진, 폼 검증, 인증 가드, 사용자 격리
 npm run typecheck
 npm run lint
 npm run build
@@ -33,13 +35,17 @@ npm run build
 src/lib/domain/     ← 도메인. 프레임워크 의존성 없는 순수 로직
   wallpaper.ts        벽지 롤 규격, 계수 기본값 (전부 여기 모여 있음)
   estimate.ts         물량·금액 산출 엔진
-  estimate.test.ts    엔진 테스트
   site.ts             현장 모델 + zod 검증
+src/lib/auth/       ← 인증
+  user.ts             현재 사용자 조회 / requireUser()
+  dev-bypass.ts       로그인 우회 허용 여부 판단 (순수 함수)
+  errors.ts           Supabase 영문 에러 → 한국어 문구
 src/lib/data/       ← 저장소. 인터페이스 하나에 구현 두 개
   repository.ts       환경변수 보고 구현체를 고른다
   file-repo.ts        로컬 JSON (개발·데모용)
   supabase-repo.ts    Supabase (배포용)
 src/app/            ← 화면 (Next.js App Router)
+src/proxy.ts        ← 매 요청 Supabase 세션 갱신 (Next 16의 미들웨어)
 supabase/migrations ← DB 스키마 (owner_id + RLS 포함)
 ```
 
@@ -104,34 +110,69 @@ supabase/migrations ← DB 스키마 (owner_id + RLS 포함)
 한 곳에 모아 뒀다. 실제 현장 5~10건을 정산해 보고 본인 기준으로 맞춰야 견적이
 맞아 들어간다.
 
-## Supabase 붙이기 (2단계)
+## 로그인
+
+**환경변수 유무가 모드를 결정한다.**
+
+| | 로그인 | 데이터 | 용도 |
+|---|---|---|---|
+| Supabase 환경변수 **없음** | 꺼짐 (고정 개발 계정) | `.data/sites.json` | 로컬 개발·데모 |
+| Supabase 환경변수 **있음** | 켜짐 | Supabase (RLS) | 실사용 |
+
+`requireUser()`가 로그인을 강제하고, 저장소의 모든 메서드가 `ownerId`를 받아
+사용자별로 데이터를 가른다. Supabase 쪽은 RLS로도 막혀 있지만 쿼리에도
+`owner_id` 조건을 남겨 뒀다 — 정책을 잘못 손대는 순간 조용히 새는 것보다 낫다.
+
+**서버 액션은 UI를 거치지 않고 POST로 직접 호출될 수 있다.** 그래서 페이지에서
+확인했더라도 `createSite`·`updateSite`·`deleteSite` 안에서 다시 `requireUser()`를
+부른다.
+
+### 프로덕션 안전장치
+
+로그인이 꺼진 채로 배포되면 아무나 남의 현장을 보게 된다. 그래서
+`NODE_ENV=production`인데 Supabase 환경변수가 없으면 **앱이 뜨지 않는다**
+(보호된 페이지는 500, `/login`은 원인을 화면에 띄운다).
+
+로컬에서 프로덕션 빌드를 확인할 때만 `ALLOW_INSECURE_DEV_AUTH=true`로 푼다.
+실제 배포 환경에는 절대 넣지 말 것.
+
+## Supabase 붙이기
 
 1. Supabase 프로젝트를 만든다
 2. SQL Editor에 `supabase/migrations/0001_init.sql`을 붙여 실행
 3. `.env.example`을 `.env.local`로 복사하고 URL·anon key를 채운다
-4. 서버 재시작 — 저장소가 자동으로 Supabase로 바뀐다
+4. 서버 재시작 — 로그인과 클라우드 저장이 함께 켜진다
 
 `repository.ts`가 환경변수 유무만 보고 구현체를 고르기 때문에 화면 코드는
 건드릴 게 없다.
 
-단, 스키마에 **RLS가 걸려 있어서 로그인 없이는 아무것도 읽고 쓸 수 없다.**
-Supabase를 붙이는 단계에서는 로그인도 같이 붙여야 한다 (아래 로드맵 1번).
+### 카카오 로그인 (선택)
+
+기사님들에게는 이메일보다 카카오가 훨씬 편하다. 다만 외부 설정이 필요하다.
+
+1. [Kakao Developers](https://developers.kakao.com)에서 앱을 만들고 REST API 키 발급
+2. Supabase 대시보드 → Authentication → Providers → Kakao 활성화, 키 입력
+3. 카카오 앱의 Redirect URI에 Supabase가 알려주는 콜백 주소 등록
+4. `.env.local`에 `NEXT_PUBLIC_KAKAO_LOGIN=true`
+
+설정 전까지는 버튼이 아예 안 보인다 (눌러도 안 되는 버튼을 두지 않으려고).
+
+콜백은 `/auth/callback`이 받는다. 이메일 인증 링크도 같은 자리로 온다.
 
 ## 로드맵
 
 우선순위 순.
 
-1. **로그인** — Supabase Auth (카카오 or 전화번호 OTB). RLS가 이미 `owner_id`
-   기준으로 잡혀 있으니 인증만 붙이면 다중 사용자가 된다
-2. **견적 결과를 현장에 저장** — 지금은 계산기에서 조정한 단가·마진이 현장에
+1. **견적 결과를 현장에 저장** — 지금은 계산기에서 조정한 단가·마진이 현장에
    남지 않는다. 견적을 별도 테이블(`estimates`)로 빼서 이력을 남길 것
-3. **견적서 공유** — PDF/이미지로 뽑아 카카오톡으로 바로 보내기
+2. **견적서 공유** — PDF/이미지로 뽑아 카카오톡으로 바로 보내기
+3. **단가표 설정 화면** — `DEFAULTS`를 코드가 아니라 `/settings`에서 고치게
 4. **자재 발주 목록** — 현장별 롤 수를 모아 주간 발주표 생성
 5. **입금·정산** — 계약금/잔금 입금 기록, 월별 매출 집계
 6. **사진 기록** — 현장 시공 전/후 사진 (Supabase Storage)
-7. **단가표 설정 화면** — `DEFAULTS`를 코드가 아니라 앱에서 고치게
+7. **비밀번호 재설정** — 지금은 가입·로그인만 있다
 
 ## 기술 스택
 
-Next.js 16 (App Router, Server Actions) · React 19 · TypeScript · Tailwind CSS 4 ·
-Supabase (Postgres + Auth + RLS) · zod · Vitest
+Next.js 16 (App Router, Server Actions, Proxy) · React 19 · TypeScript ·
+Tailwind CSS 4 · Supabase (Postgres + Auth + RLS) · zod · Vitest

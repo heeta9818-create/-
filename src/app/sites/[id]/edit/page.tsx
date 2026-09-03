@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui";
 import { SiteForm } from "@/components/site-form";
+import { requireUser } from "@/lib/auth/user";
 import { getSiteRepository } from "@/lib/data/repository";
 import { updateSite } from "../../actions";
 
@@ -10,8 +11,9 @@ export default async function EditSitePage(
   props: PageProps<"/sites/[id]/edit">,
 ) {
   const { id } = await props.params;
+  const user = await requireUser();
   const repo = await getSiteRepository();
-  const site = await repo.get(id);
+  const site = await repo.get(id, user.id);
   if (!site) notFound();
 
   return (

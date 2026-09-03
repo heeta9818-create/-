@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { Card, PageHeader, StatusBadge } from "@/components/ui";
 import { SiteActions } from "@/components/site-actions";
+import { requireUser } from "@/lib/auth/user";
 import { getSiteRepository } from "@/lib/data/repository";
 import { estimateForSite } from "@/lib/domain/site-estimate";
 import { WALLPAPER_SPECS } from "@/lib/domain/wallpaper";
@@ -10,8 +11,9 @@ export const dynamic = "force-dynamic";
 
 export default async function SiteDetailPage(props: PageProps<"/sites/[id]">) {
   const { id } = await props.params;
+  const user = await requireUser();
   const repo = await getSiteRepository();
-  const site = await repo.get(id);
+  const site = await repo.get(id, user.id);
   if (!site) notFound();
 
   const estimate = estimateForSite(site);

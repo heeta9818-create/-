@@ -57,42 +57,41 @@ function toRow(input: SiteInput, estimateTotal: number) {
   };
 }
 
-async function currentUserId(): Promise<string> {
-  const supabase = await createSupabaseServerClient();
-  const { data } = await supabase.auth.getUser();
-  if (!data.user) throw new Error("로그인이 필요합니다");
-  return data.user.id;
-}
-
+/**
+ * owner_id 조건은 RLS와 중복이다. 일부러 남겨 둔다 — 정책을 잘못 손대는
+ * 순간 조용히 남의 데이터가 새는 것보다, 쿼리에도 조건이 박혀 있는 편이 낫다.
+ */
 export const supabaseSiteRepository: SiteRepository = {
-  async list() {
+  async list(ownerId) {
     const supabase = await createSupabaseServerClient();
     const { data, error } = await supabase
       .from("sites")
       .select("*")
+      .eq("owner_id", ownerId)
       .order("created_at", { ascending: false });
 
     if (error) throw error;
     return (data as SiteRow[]).map(toSite);
   },
 
-  async get(id) {
+  async get(id, ownerId) {
     const supabase = await createSupabaseServerClient();
     const { data, error } = await supabase
       .from("sites")
       .select("*")
       .eq("id", id)
+      .eq("owner_id", ownerId)
       .maybeSingle();
 
     if (error) throw error;
     return data ? toSite(data as SiteRow) : null;
   },
 
-  async create(input, estimateTotal) {
+  async create(ownerId, input, estimateTotal) {
     const supabase = await createSupabaseServerClient();
     const { data, error } = await supabase
       .from("sites")
-      .insert({ ...toRow(input, estimateTotal), owner_id: await currentUserId() })
+      .insert({ ...toRow(input, estimateTotal), owner_id: ownerId })
       .select("*")
       .single();
 
@@ -100,12 +99,13 @@ export const supabaseSiteRepository: SiteRepository = {
     return toSite(data as SiteRow);
   },
 
-  async update(id, input, estimateTotal) {
+  async update(id, ownerId, input, estimateTotal) {
     const supabase = await createSupabaseServerClient();
     const { data, error } = await supabase
       .from("sites")
       .update(toRow(input, estimateTotal))
       .eq("id", id)
+      .eq("owner_id", ownerId)
       .select("*")
       .maybeSingle();
 
@@ -113,9 +113,13 @@ export const supabaseSiteRepository: SiteRepository = {
     return data ? toSite(data as SiteRow) : null;
   },
 
-  async remove(id) {
+  async remove(id, ownerId) {
     const supabase = await createSupabaseServerClient();
-    const { error } = await supabase.from("sites").delete().eq("id", id);
+    const { error } = await supabase
+      .from("sites")
+      .delete()
+      .eq("id", id)
+      .eq("owner_id", ownerId);
     if (error) throw error;
   },
 };

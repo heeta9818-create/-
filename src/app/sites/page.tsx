@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Card, EmptyState, PageHeader, StatusBadge } from "@/components/ui";
+import { requireUser } from "@/lib/auth/user";
 import { getSiteRepository } from "@/lib/data/repository";
 import { WALLPAPER_SPECS } from "@/lib/domain/wallpaper";
 import { shortDate, won } from "@/lib/format";
@@ -7,8 +8,9 @@ import { shortDate, won } from "@/lib/format";
 export const dynamic = "force-dynamic";
 
 export default async function SitesPage() {
+  const user = await requireUser();
   const repo = await getSiteRepository();
-  const sites = await repo.list();
+  const sites = await repo.list(user.id);
 
   return (
     <>

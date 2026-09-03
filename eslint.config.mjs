@@ -16,6 +16,21 @@ const eslintConfig = defineConfig([
     ".agents/**",
     ".claude/**",
   ]),
+  {
+    rules: {
+      // 밑줄로 시작하는 이름은 "일부러 안 쓰는 값"이라는 표시로 쓴다.
+      // (구조분해로 필드를 떼어낼 때, 시그니처를 맞추려고 받는 인자 등)
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          destructuredArrayIgnorePattern: "^_",
+          ignoreRestSiblings: true,
+        },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;

@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Noto_Sans_KR } from "next/font/google";
-import Link from "next/link";
+import { AppNav } from "@/components/app-nav";
 import "./globals.css";
 
 const notoSansKr = Noto_Sans_KR({
@@ -20,12 +20,6 @@ export const viewport: Viewport = {
   themeColor: "#1d4ed8",
 };
 
-const NAV = [
-  { href: "/", label: "홈" },
-  { href: "/sites", label: "현장" },
-  { href: "/estimate", label: "견적계산" },
-];
-
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="ko" className={`${notoSansKr.variable} h-full antialiased`}>
@@ -34,19 +28,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <main className="flex-1 pb-24">{children}</main>
         </div>
 
-        <nav className="no-print fixed inset-x-0 bottom-0 border-t border-line bg-surface">
-          <div className="mx-auto flex max-w-2xl">
-            {NAV.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="flex-1 py-4 text-center text-sm font-medium text-muted transition-colors hover:text-brand"
-              >
-                {item.label}
-              </Link>
-            ))}
-          </div>
-        </nav>
+        <AppNav />
       </body>
     </html>
   );
