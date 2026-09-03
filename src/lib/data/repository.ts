@@ -3,6 +3,7 @@ import type {
   SavedEstimate,
   SharedEstimate,
 } from "@/lib/domain/saved-estimate";
+import type { PriceSettings } from "@/lib/domain/settings";
 import type { Site, SiteInput } from "@/lib/domain/site";
 
 /**
@@ -45,6 +46,19 @@ export interface EstimateRepository {
   disableSharing(id: string, ownerId: string): Promise<void>;
   /** 로그인 없이 열쇠로만 조회한다. 공개 견적서 화면에서 쓴다. */
   findShared(token: string): Promise<SharedEstimate | null>;
+
+  /**
+   * 저장된 견적이 하나라도 있는 현장의 id 목록.
+   * 단가표를 고쳤을 때 "저장된 견적이 없어서 기본 견적을 쓰는 현장"만
+   * 다시 계산하려고 쓴다.
+   */
+  siteIdsWithEstimates(ownerId: string): Promise<string[]>;
+}
+
+export interface SettingsRepository {
+  /** 저장한 적이 없으면 기본 단가표를 돌려준다. */
+  get(ownerId: string): Promise<PriceSettings>;
+  save(ownerId: string, settings: PriceSettings): Promise<void>;
 }
 
 /** Supabase 환경변수가 모두 있으면 Supabase를, 없으면 로컬 파일 저장소를 쓴다. */
@@ -57,6 +71,7 @@ export function isSupabaseConfigured(): boolean {
 
 let cachedSites: SiteRepository | null = null;
 let cachedEstimates: EstimateRepository | null = null;
+let cachedSettings: SettingsRepository | null = null;
 
 export async function getSiteRepository(): Promise<SiteRepository> {
   if (cachedSites) return cachedSites;
@@ -77,5 +92,16 @@ export async function getEstimateRepository(): Promise<EstimateRepository> {
     : (await import("./file-repo")).fileEstimateRepository;
 
   cachedEstimates = repo;
+  return repo;
+}
+
+export async function getSettingsRepository(): Promise<SettingsRepository> {
+  if (cachedSettings) return cachedSettings;
+
+  const repo = isSupabaseConfigured()
+    ? (await import("./supabase-repo")).supabaseSettingsRepository
+    : (await import("./file-repo")).fileSettingsRepository;
+
+  cachedSettings = repo;
   return repo;
 }

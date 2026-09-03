@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_SETTINGS } from "./settings";
 import { parseSiteForm } from "./site";
 import { estimateForSite } from "./site-estimate";
 
@@ -75,7 +76,7 @@ describe("현장 기본 견적", () => {
     expect(parsed.success).toBe(true);
     if (!parsed.success) return;
 
-    const result = estimateForSite(parsed.data);
+    const result = estimateForSite(parsed.data, DEFAULT_SETTINGS);
     expect(result.rolls).toBeGreaterThan(0);
     expect(result.total).toBeGreaterThan(0);
     // 부가세는 별도지만 마진은 기본값이 붙는다. 견적 계산기 초기값과
@@ -91,8 +92,8 @@ describe("현장 기본 견적", () => {
     const withoutCeiling = parseSiteForm(noCeilingData);
 
     if (!withCeiling.success || !withoutCeiling.success) throw new Error("파싱 실패");
-    expect(estimateForSite(withoutCeiling.data).total).toBeLessThan(
-      estimateForSite(withCeiling.data).total,
+    expect(estimateForSite(withoutCeiling.data, DEFAULT_SETTINGS).total).toBeLessThan(
+      estimateForSite(withCeiling.data, DEFAULT_SETTINGS).total,
     );
   });
 });

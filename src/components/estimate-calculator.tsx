@@ -64,6 +64,20 @@ export function EstimateCalculator({
   );
   const [patterned, setPatterned] = useState(initialInput?.patterned ?? false);
 
+  /**
+   * 로스율은 무늬 여부에 따라 달라진다. 이어받은 견적의 로스율을 그대로
+   * 쓰다가, 사용자가 무늬 체크를 건드리면 놓아준다 — 무늬를 켰는데
+   * 로스율이 그대로면 체크가 아무 일도 안 하는 것처럼 보인다.
+   */
+  const [lossRate, setLossRate] = useState<number | undefined>(
+    initialInput?.lossRate,
+  );
+
+  function togglePatterned(next: boolean) {
+    setPatterned(next);
+    setLossRate(undefined);
+  }
+
   const [rollPrice, setRollPrice] = useState(
     initialInput?.rollPrice ??
       WALLPAPER_SPECS[initialInput?.kind ?? "silk"].defaultRollPrice,
@@ -91,6 +105,19 @@ export function EstimateCalculator({
 
   const input = useMemo<EstimateInput>(
     () => ({
+      // 화면에 없는 값(면적 계수·부자재 단가 등)은 이어받은 견적의 것을
+      // 그대로 들고 간다. 2차 견적을 잡는 동안 단가표가 바뀌었다고 해서
+      // 같은 현장의 물량이 달라지면 곤란하다.
+      subMaterialPerM2: initialInput?.subMaterialPerM2,
+      rollsPerWorkerDay: initialInput?.rollsPerWorkerDay,
+      openingDeductionRate: initialInput?.openingDeductionRate,
+      ceilingHeightM: initialInput?.ceilingHeightM,
+      wallAreaFactor: initialInput?.wallAreaFactor,
+      ceilingAreaFactor: initialInput?.ceilingAreaFactor,
+      exclusiveRatio: initialInput?.exclusiveRatio,
+      extras: initialInput?.extras,
+      lossRate,
+
       scope:
         method === "pyeong"
           ? { method: "pyeong", pyeong, basis }
@@ -105,6 +132,8 @@ export function EstimateCalculator({
       includeVat,
     }),
     [
+      initialInput,
+      lossRate,
       method,
       pyeong,
       basis,
@@ -266,7 +295,7 @@ export function EstimateCalculator({
         {(
           [
             ["천장도 도배", includeCeiling, setIncludeCeiling],
-            ["무늬(리피트) 있는 벽지", patterned, setPatterned],
+            ["무늬(리피트) 있는 벽지", patterned, togglePatterned],
             ["부가세 10% 포함", includeVat, setIncludeVat],
           ] as const
         ).map(([label, checked, setter]) => (

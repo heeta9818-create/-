@@ -7,7 +7,16 @@ import type {
   SharedEstimate,
 } from "@/lib/domain/saved-estimate";
 import type { Site, SiteInput } from "@/lib/domain/site";
-import type { EstimateRepository, SiteRepository } from "./repository";
+import {
+  DEFAULT_SETTINGS,
+  withDefaults,
+  type PriceSettings,
+} from "@/lib/domain/settings";
+import type {
+  EstimateRepository,
+  SettingsRepository,
+  SiteRepository,
+} from "./repository";
 
 /**
  * Supabase 없이도 바로 굴려볼 수 있게 만든 로컬 파일 저장소.
@@ -16,6 +25,7 @@ import type { EstimateRepository, SiteRepository } from "./repository";
 const DATA_DIR = path.join(process.cwd(), ".data");
 const DATA_FILE = path.join(DATA_DIR, "sites.json");
 const ESTIMATE_FILE = path.join(DATA_DIR, "estimates.json");
+const SETTINGS_FILE = path.join(DATA_DIR, "settings.json");
 
 /**
  * 읽고-고쳐서-쓰는 동작을 한 줄로 세운다.
@@ -299,5 +309,44 @@ export const fileEstimateRepository: EstimateRepository = {
       customerName: site.customerName,
       address: site.address ?? "",
     } satisfies SharedEstimate;
+  },
+
+  async siteIdsWithEstimates(ownerId) {
+    const estimates = await readEstimates();
+    return [
+      ...new Set(
+        estimates
+          .filter((row) => row.ownerId === ownerId)
+          .map((row) => row.siteId),
+      ),
+    ];
+  },
+};
+
+/* ------------------------------------------------------------------ 단가표 */
+
+type StoredSettings = Record<string, Partial<PriceSettings>>;
+
+async function readSettings(): Promise<StoredSettings> {
+  try {
+    const raw = await readFile(SETTINGS_FILE, "utf8");
+    return JSON.parse(raw) as StoredSettings;
+  } catch {
+    return {};
+  }
+}
+
+export const fileSettingsRepository: SettingsRepository = {
+  async get(ownerId) {
+    const all = await readSettings();
+    return withDefaults(all[ownerId]) ?? DEFAULT_SETTINGS;
+  },
+
+  save(ownerId, settings) {
+    return withLock(async () => {
+      const all = await readSettings();
+      all[ownerId] = settings;
+      await writeJson(SETTINGS_FILE, all);
+    });
   },
 };

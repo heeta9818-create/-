@@ -5,10 +5,12 @@ import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/user";
 import {
   getEstimateRepository,
+  getSettingsRepository,
   getSiteRepository,
 } from "@/lib/data/repository";
 import { calculateEstimate } from "@/lib/domain/estimate";
 import { parseEstimateInput } from "@/lib/domain/estimate-schema";
+import { resolveEstimateInput } from "@/lib/domain/resolve-estimate";
 
 export interface SaveEstimateState {
   error?: string;
@@ -32,8 +34,13 @@ export async function saveEstimate(
   const parsed = parseEstimateInput(formData.get("input"));
   if (!parsed.success) return { error: parsed.error };
 
+  // 지금 단가표를 입력에 박아 둔다. 비워 두면 나중에 단가표를 고쳤을 때
+  // "이 값으로 다시 잡기"가 다른 금액을 내놓는다.
+  const settings = await (await getSettingsRepository()).get(user.id);
+  const input = resolveEstimateInput(parsed.data, settings);
+
   // 브라우저가 보낸 금액은 쓰지 않는다. 입력만 받고 서버가 다시 계산한다.
-  const result = calculateEstimate(parsed.data);
+  const result = calculateEstimate(input);
 
   const estimateRepo = await getEstimateRepository();
   const saved = await estimateRepo.create(user.id, siteId, {
@@ -43,7 +50,7 @@ export async function saveEstimate(
     memo: String(formData.get("memo") ?? "")
       .trim()
       .slice(0, 1000),
-    input: parsed.data,
+    input,
     result,
   });
 
@@ -77,10 +84,11 @@ export async function deleteEstimate(formData: FormData): Promise<void> {
     const site = await siteRepo.get(siteId, user.id);
     if (site) {
       const { estimateForSite } = await import("@/lib/domain/site-estimate");
+      const settings = await (await getSettingsRepository()).get(user.id);
       await siteRepo.setEstimateTotal(
         siteId,
         user.id,
-        estimateForSite(site).total,
+        estimateForSite(site, settings).total,
       );
     }
   }

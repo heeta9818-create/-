@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/ui";
 import { requireUser } from "@/lib/auth/user";
 import {
   getEstimateRepository,
+  getSettingsRepository,
   getSiteRepository,
 } from "@/lib/data/repository";
 import type { EstimateInput } from "@/lib/domain/estimate";
@@ -33,9 +34,10 @@ export default async function SiteEstimatePage(
     ? (history.find((estimate) => estimate.id === copyId) ?? history[0])
     : history[0];
 
+  const settings = await (await getSettingsRepository()).get(user.id);
   const initialInput: EstimateInput = source
     ? source.input
-    : siteEstimateInput(site);
+    : siteEstimateInput(site, settings);
 
   return (
     <>

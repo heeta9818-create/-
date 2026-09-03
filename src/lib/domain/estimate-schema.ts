@@ -43,6 +43,7 @@ export const estimateInputSchema = z.object({
   rollPrice: money.optional(),
   dailyWage: money.optional(),
   subMaterialPerM2: money.optional(),
+  rollsPerWorkerDay: z.number().int().min(1).max(200).optional(),
 
   lossRate: z.number().min(0).max(1).optional(),
   openingDeductionRate: z.number().min(0).max(1).optional(),

@@ -3,7 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/user";
-import { getSiteRepository } from "@/lib/data/repository";
+import {
+  getSettingsRepository,
+  getSiteRepository,
+} from "@/lib/data/repository";
 import { estimateForSite } from "@/lib/domain/site-estimate";
 import { parseSiteForm } from "@/lib/domain/site";
 
@@ -24,7 +27,8 @@ export async function createSite(
   }
 
   const repo = await getSiteRepository();
-  const total = estimateForSite(parsed.data).total;
+  const settings = await (await getSettingsRepository()).get(user.id);
+  const total = estimateForSite(parsed.data, settings).total;
   const site = await repo.create(user.id, parsed.data, total);
 
   revalidatePath("/sites");
@@ -44,7 +48,8 @@ export async function updateSite(
   }
 
   const repo = await getSiteRepository();
-  const total = estimateForSite(parsed.data).total;
+  const settings = await (await getSettingsRepository()).get(user.id);
+  const total = estimateForSite(parsed.data, settings).total;
   const updated = await repo.update(id, user.id, parsed.data, total);
   if (!updated) return { error: "현장을 찾을 수 없습니다" };
 

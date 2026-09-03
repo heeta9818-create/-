@@ -6,7 +6,12 @@ import type {
 } from "@/lib/domain/saved-estimate";
 import type { Site, SiteInput, SiteStatus } from "@/lib/domain/site";
 import type { WallpaperKind } from "@/lib/domain/wallpaper";
-import type { EstimateRepository, SiteRepository } from "./repository";
+import { withDefaults, type PriceSettings } from "@/lib/domain/settings";
+import type {
+  EstimateRepository,
+  SettingsRepository,
+  SiteRepository,
+} from "./repository";
 import { createSupabaseServerClient } from "./supabase/server";
 
 /** DB 컬럼(snake_case) ↔ 도메인 모델(camelCase) 변환 */
@@ -281,5 +286,45 @@ export const supabaseEstimateRepository: EstimateRepository = {
       customerName: row.customer_name,
       address: row.address ?? "",
     } satisfies SharedEstimate;
+  },
+
+  async siteIdsWithEstimates(ownerId) {
+    const supabase = await createSupabaseServerClient();
+    const { data, error } = await supabase
+      .from("estimates")
+      .select("site_id")
+      .eq("owner_id", ownerId);
+
+    if (error) throw error;
+    return [...new Set((data as { site_id: string }[]).map((r) => r.site_id))];
+  },
+};
+
+/* ------------------------------------------------------------------ 단가표 */
+
+export const supabaseSettingsRepository: SettingsRepository = {
+  async get(ownerId) {
+    const supabase = await createSupabaseServerClient();
+    const { data, error } = await supabase
+      .from("settings")
+      .select("data")
+      .eq("owner_id", ownerId)
+      .maybeSingle();
+
+    if (error) throw error;
+    // 저장한 적이 없거나 항목이 나중에 늘어난 경우 기본값으로 채운다.
+    return withDefaults((data?.data ?? null) as Partial<PriceSettings> | null);
+  },
+
+  async save(ownerId, settings) {
+    const supabase = await createSupabaseServerClient();
+    const { error } = await supabase
+      .from("settings")
+      .upsert(
+        { owner_id: ownerId, data: settings },
+        { onConflict: "owner_id" },
+      );
+
+    if (error) throw error;
   },
 };

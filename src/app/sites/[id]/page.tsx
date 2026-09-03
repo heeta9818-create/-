@@ -6,6 +6,7 @@ import { SiteActions } from "@/components/site-actions";
 import { requireUser } from "@/lib/auth/user";
 import {
   getEstimateRepository,
+  getSettingsRepository,
   getSiteRepository,
 } from "@/lib/data/repository";
 import { estimateTitle } from "@/lib/domain/saved-estimate";
@@ -29,7 +30,8 @@ export default async function SiteDetailPage(props: PageProps<"/sites/[id]">) {
 
   // 저장된 견적이 있으면 그게 이 현장의 견적이다.
   // 없으면 현장 정보만으로 뽑은 기본 견적을 보여준다.
-  const shown = latest ? latest.result : estimateForSite(site);
+  const settings = await (await getSettingsRepository()).get(user.id);
+  const shown = latest ? latest.result : estimateForSite(site, settings);
   const spec = WALLPAPER_SPECS[site.wallpaperKind];
 
   const info: [string, string][] = [

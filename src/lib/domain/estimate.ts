@@ -47,6 +47,8 @@ export interface EstimateInput {
   rollPrice?: number;
   dailyWage?: number;
   subMaterialPerM2?: number;
+  /** 도배공 1인 하루 시공 롤 수. 품 산출에 쓴다 */
+  rollsPerWorkerDay?: number;
 
   /** --- 조정값 (미지정 시 기본값) --- */
   lossRate?: number;
@@ -184,8 +186,8 @@ export function calculateEstimate(input: EstimateInput): EstimateResult {
   const perRoll = rollAreaM2(input.kind);
   const rolls = requiredArea > 0 ? Math.ceil(requiredArea / perRoll) : 0;
 
-  const workerDays =
-    rolls > 0 ? Math.ceil(rolls / spec.rollsPerWorkerDay) : 0;
+  const perWorkerDay = input.rollsPerWorkerDay ?? spec.rollsPerWorkerDay;
+  const workerDays = rolls > 0 ? Math.ceil(rolls / perWorkerDay) : 0;
 
   const rollPrice = input.rollPrice ?? spec.defaultRollPrice;
   const dailyWage = input.dailyWage ?? DEFAULTS.dailyWage;

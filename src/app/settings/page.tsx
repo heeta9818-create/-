@@ -1,18 +1,26 @@
 import { Card, PageHeader } from "@/components/ui";
+import { SettingsForm } from "@/components/settings-form";
 import { SignOutButton } from "@/components/sign-out-button";
 import { requireUser, isAuthDisabled } from "@/lib/auth/user";
+import { getSettingsRepository } from "@/lib/data/repository";
 
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const user = await requireUser();
   const devMode = isAuthDisabled();
+  const settings = await (await getSettingsRepository()).get(user.id);
 
   return (
     <>
-      <PageHeader title="설정" />
+      <PageHeader
+        title="설정"
+        subtitle="여기 단가표로 모든 견적이 계산됩니다"
+      />
 
       <div className="space-y-5 px-5">
+        <SettingsForm settings={settings} />
+
         <section>
           <h2 className="mb-3 text-sm font-semibold text-muted">계정</h2>
           <Card>
@@ -41,12 +49,6 @@ export default async function SettingsPage() {
         ) : (
           <SignOutButton />
         )}
-
-        <p className="text-xs text-muted">
-          단가표·기본 계수 설정 화면은 아직 없습니다. 지금은{" "}
-          <code>src/lib/domain/wallpaper.ts</code>의 <code>DEFAULTS</code>를
-          직접 고쳐야 합니다.
-        </p>
       </div>
     </>
   );

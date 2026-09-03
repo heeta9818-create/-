@@ -4,7 +4,12 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { calculateEstimate, type EstimateInput } from "@/lib/domain/estimate";
 import type { SiteInput } from "@/lib/domain/site";
-import type { EstimateRepository, SiteRepository } from "./repository";
+import { DEFAULT_SETTINGS } from "@/lib/domain/settings";
+import type {
+  EstimateRepository,
+  SettingsRepository,
+  SiteRepository,
+} from "./repository";
 
 const ALICE = "11111111-1111-1111-1111-111111111111";
 const BOB = "22222222-2222-2222-2222-222222222222";
@@ -43,6 +48,7 @@ let workdir: string;
 let originalCwd: string;
 let sites: SiteRepository;
 let estimates: EstimateRepository;
+let settings: SettingsRepository;
 
 beforeEach(async () => {
   originalCwd = process.cwd();
@@ -53,6 +59,7 @@ beforeEach(async () => {
   const mod = await import("./file-repo");
   sites = mod.fileSiteRepository;
   estimates = mod.fileEstimateRepository;
+  settings = mod.fileSettingsRepository;
 });
 
 afterEach(async () => {
@@ -367,5 +374,64 @@ describe("현장 금액 갱신", () => {
 
     await sites.setEstimateTotal(site.id, ALICE, 2_000_000);
     expect((await sites.get(site.id, ALICE))?.estimateTotal).toBe(2_000_000);
+  });
+});
+
+describe("단가표 저장소", () => {
+  it("저장한 적 없으면 기본 단가표", async () => {
+    expect(await settings.get(ALICE)).toEqual(DEFAULT_SETTINGS);
+  });
+
+  it("저장하면 그대로 돌아온다", async () => {
+    const mine = { ...DEFAULT_SETTINGS, dailyWage: 300_000, marginRate: 0.25 };
+    await settings.save(ALICE, mine);
+
+    expect(await settings.get(ALICE)).toEqual(mine);
+  });
+
+  it("사람마다 따로 쓴다", async () => {
+    await settings.save(ALICE, { ...DEFAULT_SETTINGS, dailyWage: 300_000 });
+
+    expect((await settings.get(ALICE)).dailyWage).toBe(300_000);
+    expect((await settings.get(BOB)).dailyWage).toBe(DEFAULT_SETTINGS.dailyWage);
+  });
+
+  it("덮어쓰면 마지막 값이 남는다", async () => {
+    await settings.save(ALICE, { ...DEFAULT_SETTINGS, dailyWage: 300_000 });
+    await settings.save(ALICE, { ...DEFAULT_SETTINGS, dailyWage: 200_000 });
+
+    expect((await settings.get(ALICE)).dailyWage).toBe(200_000);
+  });
+});
+
+describe("견적이 있는 현장 찾기", () => {
+  // 단가표를 고쳤을 때 "기본 견적을 쓰는 현장"만 다시 계산하려고 쓴다.
+  it("견적을 저장한 현장만 나온다", async () => {
+    const withEstimate = await sites.create(ALICE, siteInput(), 0);
+    const without = await sites.create(
+      ALICE,
+      siteInput({ customerName: "견적 없음" }),
+      0,
+    );
+    await estimates.create(ALICE, withEstimate.id, newEstimate(""));
+
+    const ids = await estimates.siteIdsWithEstimates(ALICE);
+    expect(ids).toContain(withEstimate.id);
+    expect(ids).not.toContain(without.id);
+  });
+
+  it("같은 현장에 여러 건이 있어도 한 번만 나온다", async () => {
+    const site = await sites.create(ALICE, siteInput(), 0);
+    await estimates.create(ALICE, site.id, newEstimate("1차"));
+    await estimates.create(ALICE, site.id, newEstimate("2차"));
+
+    expect(await estimates.siteIdsWithEstimates(ALICE)).toEqual([site.id]);
+  });
+
+  it("남의 견적은 세지 않는다", async () => {
+    const site = await sites.create(ALICE, siteInput(), 0);
+    await estimates.create(ALICE, site.id, newEstimate(""));
+
+    expect(await estimates.siteIdsWithEstimates(BOB)).toEqual([]);
   });
 });
