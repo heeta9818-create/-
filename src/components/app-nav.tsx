@@ -10,8 +10,11 @@ const NAV = [
   { href: "/settings", label: "설정" },
 ];
 
-/** 로그인·인증 화면에서는 네비게이션을 감춘다. */
-const HIDDEN_PREFIXES = ["/login", "/auth"];
+/**
+ * 로그인·인증 화면과, 고객이 보는 공개 견적서(/q)에서는 네비게이션을 감춘다.
+ * 고객에게 앱 메뉴를 보여줄 이유가 없다.
+ */
+const HIDDEN_PREFIXES = ["/login", "/auth", "/q/"];
 
 export function AppNav() {
   const pathname = usePathname();

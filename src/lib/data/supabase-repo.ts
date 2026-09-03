@@ -1,5 +1,9 @@
 import type { EstimateInput, EstimateResult } from "@/lib/domain/estimate";
-import type { NewEstimate, SavedEstimate } from "@/lib/domain/saved-estimate";
+import type {
+  NewEstimate,
+  SavedEstimate,
+  SharedEstimate,
+} from "@/lib/domain/saved-estimate";
 import type { Site, SiteInput, SiteStatus } from "@/lib/domain/site";
 import type { WallpaperKind } from "@/lib/domain/wallpaper";
 import type { EstimateRepository, SiteRepository } from "./repository";
@@ -148,6 +152,7 @@ interface EstimateRow {
   input: EstimateInput;
   result: EstimateResult;
   total: number;
+  share_token: string | null;
 }
 
 function toEstimate(row: EstimateRow): SavedEstimate {
@@ -161,6 +166,7 @@ function toEstimate(row: EstimateRow): SavedEstimate {
     input: row.input,
     result: row.result,
     total: row.total,
+    shareToken: row.share_token ?? null,
   };
 }
 
@@ -219,5 +225,61 @@ export const supabaseEstimateRepository: EstimateRepository = {
       .eq("id", id)
       .eq("owner_id", ownerId);
     if (error) throw error;
+  },
+
+  async enableSharing(id, _ownerId) {
+    // 열쇠 생성과 "이미 있으면 그대로" 판단을 DB 함수가 한 번에 한다.
+    // 앱에서 읽고 없으면 쓰는 식이면 동시에 두 번 눌렀을 때 링크가 갈린다.
+    const supabase = await createSupabaseServerClient();
+    const { data, error } = await supabase.rpc("enable_estimate_sharing", {
+      p_estimate_id: id,
+    });
+
+    if (error) throw error;
+    return (data as string | null) ?? null;
+  },
+
+  async disableSharing(id, ownerId) {
+    const supabase = await createSupabaseServerClient();
+    const { error } = await supabase
+      .from("estimates")
+      .update({ share_token: null })
+      .eq("id", id)
+      .eq("owner_id", ownerId);
+    if (error) throw error;
+  },
+
+  async findShared(token) {
+    if (!token) return null;
+
+    // RLS를 우회하는 security definer 함수다. 열쇠 일치 한 건만 꺼내고
+    // 내부 메모나 연락처는 애초에 돌려주지 않는다.
+    const supabase = await createSupabaseServerClient();
+    const { data, error } = await supabase
+      .rpc("find_shared_estimate", { p_token: token })
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return null;
+
+    const row = data as {
+      version: number;
+      label: string;
+      created_at: string;
+      input: EstimateInput;
+      result: EstimateResult;
+      customer_name: string;
+      address: string;
+    };
+
+    return {
+      version: row.version,
+      label: row.label ?? "",
+      createdAt: row.created_at,
+      input: row.input,
+      result: row.result,
+      customerName: row.customer_name,
+      address: row.address ?? "",
+    } satisfies SharedEstimate;
   },
 };

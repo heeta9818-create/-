@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { EstimateBreakdown } from "@/components/estimate-breakdown";
 import { EstimateActions } from "@/components/estimate-actions";
+import { ShareEstimate } from "@/components/share-estimate";
 import { Card, PageHeader } from "@/components/ui";
 import { requireUser } from "@/lib/auth/user";
 import {
@@ -10,7 +11,9 @@ import {
 } from "@/lib/data/repository";
 import { estimateTitle } from "@/lib/domain/saved-estimate";
 import { WALLPAPER_SPECS } from "@/lib/domain/wallpaper";
-import { shortDate } from "@/lib/format";
+import { requestOrigin } from "@/lib/origin";
+import { shortDate, won } from "@/lib/format";
+import { disableSharing, enableSharing } from "../../estimate/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +35,10 @@ export default async function SavedEstimatePage(
 
   const spec = WALLPAPER_SPECS[estimate.input.kind];
   const scope = estimate.input.scope;
+
+  const shareUrl = estimate.shareToken
+    ? `${await requestOrigin()}/q/${estimate.shareToken}`
+    : null;
 
   const rows: [string, string][] = [
     ["고객", site.customerName],
@@ -110,6 +117,15 @@ export default async function SavedEstimatePage(
             </Card>
           </section>
         ) : null}
+
+        <ShareEstimate
+          shareUrl={shareUrl}
+          title={`${site.customerName} 고객님 도배 견적서`}
+          description={`${estimateTitle(estimate)} · ${won(estimate.result.total)}`}
+          enable={enableSharing.bind(null, id, estimate.id)}
+          disable={disableSharing.bind(null, id, estimate.id)}
+          kakaoJsKey={process.env.NEXT_PUBLIC_KAKAO_JS_KEY}
+        />
 
         <EstimateActions siteId={id} estimateId={estimate.id} />
       </div>

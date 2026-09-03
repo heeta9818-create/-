@@ -14,6 +14,10 @@ export interface SaveEstimateState {
   error?: string;
 }
 
+export interface ShareState {
+  error?: string;
+}
+
 export async function saveEstimate(
   siteId: string,
   _prev: SaveEstimateState,
@@ -85,4 +89,35 @@ export async function deleteEstimate(formData: FormData): Promise<void> {
   revalidatePath("/sites");
   revalidatePath("/");
   redirect(`/sites/${siteId}`);
+}
+
+/** 공개 링크를 켠다. 이미 켜져 있으면 기존 링크가 그대로 유지된다. */
+export async function enableSharing(
+  siteId: string,
+  estimateId: string,
+  _prev: ShareState,
+): Promise<ShareState> {
+  const user = await requireUser();
+
+  const estimateRepo = await getEstimateRepository();
+  const token = await estimateRepo.enableSharing(estimateId, user.id);
+  if (!token) return { error: "견적을 찾을 수 없습니다" };
+
+  revalidatePath(`/sites/${siteId}/estimates/${estimateId}`);
+  return {};
+}
+
+/** 공개 링크를 끈다. 고객이 이미 받은 링크도 즉시 죽는다. */
+export async function disableSharing(
+  siteId: string,
+  estimateId: string,
+  _prev: ShareState,
+): Promise<ShareState> {
+  const user = await requireUser();
+
+  const estimateRepo = await getEstimateRepository();
+  await estimateRepo.disableSharing(estimateId, user.id);
+
+  revalidatePath(`/sites/${siteId}/estimates/${estimateId}`);
+  return {};
 }

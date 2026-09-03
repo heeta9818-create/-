@@ -24,6 +24,25 @@ export interface SavedEstimate {
   result: EstimateResult;
   /** result.total과 같다. 목록 정렬·조회용으로 따로 둔다 */
   total: number;
+  /**
+   * 고객에게 보내는 공개 링크의 열쇠. null이면 공유가 꺼진 상태.
+   * 링크를 아는 사람은 누구나 볼 수 있으므로 추측 불가능해야 한다.
+   */
+  shareToken: string | null;
+}
+
+/**
+ * 로그인하지 않은 고객이 공개 링크로 보는 견적.
+ * 내부 메모는 들어 있지 않다 — 고객에게 보일 내용이 아니다.
+ */
+export interface SharedEstimate {
+  version: number;
+  label: string;
+  createdAt: string;
+  input: EstimateInput;
+  result: EstimateResult;
+  customerName: string;
+  address: string;
 }
 
 export interface NewEstimate {
@@ -33,7 +52,14 @@ export interface NewEstimate {
   result: EstimateResult;
 }
 
-/** 이름이 없으면 차수로 부른다. */
-export function estimateTitle(estimate: SavedEstimate): string {
+/**
+ * 이름이 없으면 차수로 부른다.
+ * 저장된 견적과 공개 견적 양쪽에서 같은 이름이 나와야 하므로
+ * 두 타입이 공통으로 가진 필드만 받는다.
+ */
+export function estimateTitle(estimate: {
+  version: number;
+  label: string;
+}): string {
   return estimate.label || `${estimate.version}차 견적`;
 }

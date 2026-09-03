@@ -1,4 +1,8 @@
-import type { NewEstimate, SavedEstimate } from "@/lib/domain/saved-estimate";
+import type {
+  NewEstimate,
+  SavedEstimate,
+  SharedEstimate,
+} from "@/lib/domain/saved-estimate";
 import type { Site, SiteInput } from "@/lib/domain/site";
 
 /**
@@ -34,6 +38,13 @@ export interface EstimateRepository {
     data: NewEstimate,
   ): Promise<SavedEstimate>;
   remove(id: string, ownerId: string): Promise<void>;
+
+  /** 공개 링크를 켠다. 이미 켜져 있으면 기존 열쇠를 그대로 돌려준다. */
+  enableSharing(id: string, ownerId: string): Promise<string | null>;
+  /** 공개 링크를 끈다. 기존 링크는 즉시 죽는다. */
+  disableSharing(id: string, ownerId: string): Promise<void>;
+  /** 로그인 없이 열쇠로만 조회한다. 공개 견적서 화면에서 쓴다. */
+  findShared(token: string): Promise<SharedEstimate | null>;
 }
 
 /** Supabase 환경변수가 모두 있으면 Supabase를, 없으면 로컬 파일 저장소를 쓴다. */

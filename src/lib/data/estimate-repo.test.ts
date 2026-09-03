@@ -203,6 +203,117 @@ describe("현장 삭제", () => {
   });
 });
 
+describe("공개 링크", () => {
+  it("공유를 켜면 열쇠가 생기고 로그인 없이 조회된다", async () => {
+    const site = await sites.create(ALICE, siteInput(), 0);
+    const saved = await estimates.create(ALICE, site.id, newEstimate("1차"));
+
+    expect(saved.shareToken).toBeNull();
+
+    const token = await estimates.enableSharing(saved.id, ALICE);
+    expect(token).toBeTruthy();
+    expect(token!.length).toBeGreaterThanOrEqual(32);
+
+    const shared = await estimates.findShared(token!);
+    expect(shared?.customerName).toBe("김철수");
+    expect(shared?.result.total).toBe(saved.result.total);
+  });
+
+  it("다시 눌러도 링크가 바뀌지 않는다", async () => {
+    // 이미 고객에게 보낸 링크가 다시 공유했다는 이유로 죽으면 안 된다.
+    const site = await sites.create(ALICE, siteInput(), 0);
+    const saved = await estimates.create(ALICE, site.id, newEstimate(""));
+
+    const first = await estimates.enableSharing(saved.id, ALICE);
+    const second = await estimates.enableSharing(saved.id, ALICE);
+    expect(second).toBe(first);
+  });
+
+  it("내부 메모는 고객에게 넘어가지 않는다", async () => {
+    const site = await sites.create(ALICE, siteInput(), 0);
+    const saved = await estimates.create(ALICE, site.id, {
+      ...newEstimate(""),
+      memo: "자재 마진 더 붙일 것",
+    });
+
+    const token = await estimates.enableSharing(saved.id, ALICE);
+    const shared = await estimates.findShared(token!);
+
+    expect(shared).not.toBeNull();
+    expect(JSON.stringify(shared)).not.toContain("마진 더 붙일 것");
+    expect(shared).not.toHaveProperty("memo");
+  });
+
+  it("공유를 끄면 링크가 죽는다", async () => {
+    const site = await sites.create(ALICE, siteInput(), 0);
+    const saved = await estimates.create(ALICE, site.id, newEstimate(""));
+    const token = await estimates.enableSharing(saved.id, ALICE);
+
+    await estimates.disableSharing(saved.id, ALICE);
+
+    expect(await estimates.findShared(token!)).toBeNull();
+    expect((await estimates.get(saved.id, ALICE))?.shareToken).toBeNull();
+  });
+
+  it("틀린 열쇠로는 아무것도 안 나온다", async () => {
+    const site = await sites.create(ALICE, siteInput(), 0);
+    const saved = await estimates.create(ALICE, site.id, newEstimate(""));
+    await estimates.enableSharing(saved.id, ALICE);
+
+    for (const token of ["", "0".repeat(32), "없는열쇠"]) {
+      expect(await estimates.findShared(token)).toBeNull();
+    }
+  });
+
+  it("남의 견적은 공유를 켤 수 없다", async () => {
+    const site = await sites.create(ALICE, siteInput(), 0);
+    const saved = await estimates.create(ALICE, site.id, newEstimate(""));
+
+    expect(await estimates.enableSharing(saved.id, BOB)).toBeNull();
+    expect((await estimates.get(saved.id, ALICE))?.shareToken).toBeNull();
+  });
+
+  it("남이 공유를 끌 수 없다", async () => {
+    const site = await sites.create(ALICE, siteInput(), 0);
+    const saved = await estimates.create(ALICE, site.id, newEstimate(""));
+    const token = await estimates.enableSharing(saved.id, ALICE);
+
+    await estimates.disableSharing(saved.id, BOB);
+    expect(await estimates.findShared(token!)).not.toBeNull();
+  });
+
+  it("견적을 지우면 링크도 죽는다", async () => {
+    const site = await sites.create(ALICE, siteInput(), 0);
+    const saved = await estimates.create(ALICE, site.id, newEstimate(""));
+    const token = await estimates.enableSharing(saved.id, ALICE);
+
+    await estimates.remove(saved.id, ALICE);
+    expect(await estimates.findShared(token!)).toBeNull();
+  });
+
+  it("현장을 지우면 링크도 죽는다", async () => {
+    const site = await sites.create(ALICE, siteInput(), 0);
+    const saved = await estimates.create(ALICE, site.id, newEstimate(""));
+    const token = await estimates.enableSharing(saved.id, ALICE);
+
+    await sites.remove(site.id, ALICE);
+    expect(await estimates.findShared(token!)).toBeNull();
+  });
+
+  it("견적마다 열쇠가 다르다", async () => {
+    const site = await sites.create(ALICE, siteInput(), 0);
+    const a = await estimates.create(ALICE, site.id, newEstimate("1차"));
+    const b = await estimates.create(ALICE, site.id, newEstimate("2차"));
+
+    const tokenA = await estimates.enableSharing(a.id, ALICE);
+    const tokenB = await estimates.enableSharing(b.id, ALICE);
+
+    expect(tokenA).not.toBe(tokenB);
+    expect((await estimates.findShared(tokenA!))?.version).toBe(1);
+    expect((await estimates.findShared(tokenB!))?.version).toBe(2);
+  });
+});
+
 describe("동시 저장", () => {
   // 요청이 겹치면 서로의 변경을 덮어써서 데이터가 사라지던 문제의 회귀 테스트.
   it("한꺼번에 저장해도 전부 남고 차수가 겹치지 않는다", async () => {

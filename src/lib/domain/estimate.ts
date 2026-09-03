@@ -79,10 +79,18 @@ export interface AreaBreakdown {
   lossRate: number;
 }
 
+/**
+ * 항목 분류. 고객용 견적서에서 다시 묶을 때 쓴다.
+ * 라벨 문자열로 판단하면 사용자가 추가 작업 이름을 "자재비"로 지었을 때
+ * 엉뚱하게 합쳐지므로, 만들 때 분류를 달아 둔다.
+ */
+export type LineItemGroup = "material" | "labor" | "extra" | "adjustment";
+
 export interface LineItem {
   label: string;
   detail: string;
   amount: number;
+  group: LineItemGroup;
 }
 
 export interface EstimateResult {
@@ -190,6 +198,7 @@ export function calculateEstimate(input: EstimateInput): EstimateResult {
     label: `${spec.label} 자재비`,
     detail: `${rolls}롤 × ${rollPrice.toLocaleString("ko-KR")}원`,
     amount: materialCost,
+    group: "material",
   });
 
   const subMaterialCost = Math.round(netArea * subPerM2);
@@ -197,6 +206,7 @@ export function calculateEstimate(input: EstimateInput): EstimateResult {
     label: "부자재비",
     detail: `${round(netArea, 1)}m² × ${subPerM2.toLocaleString("ko-KR")}원 (초배지·풀·퍼티)`,
     amount: subMaterialCost,
+    group: "material",
   });
 
   const laborCost = workerDays * dailyWage;
@@ -204,14 +214,25 @@ export function calculateEstimate(input: EstimateInput): EstimateResult {
     label: "시공 인건비",
     detail: `${workerDays}품 × ${dailyWage.toLocaleString("ko-KR")}원`,
     amount: laborCost,
+    group: "labor",
   });
 
   for (const extra of input.extras ?? []) {
-    items.push({ label: extra.label, detail: "추가 작업", amount: extra.amount });
+    items.push({
+      label: extra.label,
+      detail: "추가 작업",
+      amount: extra.amount,
+      group: "extra",
+    });
   }
 
   if (input.travelFee) {
-    items.push({ label: "출장비", detail: "", amount: input.travelFee });
+    items.push({
+      label: "출장비",
+      detail: "",
+      amount: input.travelFee,
+      group: "extra",
+    });
   }
 
   const costBase = items.reduce((sum, item) => sum + item.amount, 0);
@@ -223,12 +244,18 @@ export function calculateEstimate(input: EstimateInput): EstimateResult {
       label: "관리비·마진",
       detail: `${round(marginRate * 100, 1)}%`,
       amount: margin,
+      group: "labor",
     });
   }
 
   const discount = input.discount ?? 0;
   if (discount > 0) {
-    items.push({ label: "할인", detail: "", amount: -discount });
+    items.push({
+      label: "할인",
+      detail: "",
+      amount: -discount,
+      group: "adjustment",
+    });
   }
 
   const subtotal = items.reduce((sum, item) => sum + item.amount, 0);

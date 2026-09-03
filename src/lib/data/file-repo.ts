@@ -1,7 +1,11 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { NewEstimate, SavedEstimate } from "@/lib/domain/saved-estimate";
+import type {
+  NewEstimate,
+  SavedEstimate,
+  SharedEstimate,
+} from "@/lib/domain/saved-estimate";
 import type { Site, SiteInput } from "@/lib/domain/site";
 import type { EstimateRepository, SiteRepository } from "./repository";
 
@@ -175,7 +179,13 @@ async function writeEstimates(estimates: StoredEstimate[]): Promise<void> {
 
 function toEstimate(stored: StoredEstimate): SavedEstimate {
   const { ownerId: _ownerId, ...estimate } = stored;
-  return estimate;
+  // 공유 기능이 생기기 전에 저장된 건에는 shareToken이 없다.
+  return { ...estimate, shareToken: estimate.shareToken ?? null };
+}
+
+/** 128비트 무작위 열쇠. 링크를 아는 사람은 누구나 볼 수 있으므로 추측 불가능해야 한다. */
+function newShareToken(): string {
+  return randomBytes(16).toString("hex");
 }
 
 export const fileEstimateRepository: EstimateRepository = {
@@ -217,6 +227,7 @@ export const fileEstimateRepository: EstimateRepository = {
         version,
         createdAt: new Date().toISOString(),
         total: data.result.total,
+        shareToken: null,
       };
 
       estimates.push(stored);
@@ -232,5 +243,61 @@ export const fileEstimateRepository: EstimateRepository = {
         estimates.filter((row) => !(row.id === id && row.ownerId === ownerId)),
       );
     });
+  },
+
+  enableSharing(id, ownerId) {
+    return withLock(async () => {
+      const estimates = await readEstimates();
+      const index = estimates.findIndex(
+        (row) => row.id === id && row.ownerId === ownerId,
+      );
+      if (index === -1) return null;
+
+      // 이미 켜져 있으면 링크를 바꾸지 않는다. 고객에게 이미 보낸 링크가
+      // 다시 공유했다는 이유로 죽으면 안 된다.
+      const existing = estimates[index].shareToken;
+      if (existing) return existing;
+
+      const token = newShareToken();
+      estimates[index] = { ...estimates[index], shareToken: token };
+      await writeEstimates(estimates);
+      return token;
+    });
+  },
+
+  disableSharing(id, ownerId) {
+    return withLock(async () => {
+      const estimates = await readEstimates();
+      const index = estimates.findIndex(
+        (row) => row.id === id && row.ownerId === ownerId,
+      );
+      if (index === -1) return;
+
+      estimates[index] = { ...estimates[index], shareToken: null };
+      await writeEstimates(estimates);
+    });
+  },
+
+  async findShared(token) {
+    if (!token) return null;
+
+    const estimates = await readEstimates();
+    const found = estimates.find((row) => row.shareToken === token);
+    if (!found) return null;
+
+    const sites = await readAll();
+    const site = sites.find((row) => row.id === found.siteId);
+    if (!site) return null;
+
+    // 메모는 일부러 뺀다. 고객에게 보일 내용이 아니다.
+    return {
+      version: found.version,
+      label: found.label,
+      createdAt: found.createdAt,
+      input: found.input,
+      result: found.result,
+      customerName: site.customerName,
+      address: site.address ?? "",
+    } satisfies SharedEstimate;
   },
 };

@@ -1,11 +1,11 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { authErrorMessage } from "@/lib/auth/errors";
 import { isAuthDisabled } from "@/lib/auth/user";
 import { createSupabaseServerClient } from "@/lib/data/supabase/server";
+import { requestOrigin } from "@/lib/origin";
 
 export interface AuthFormState {
   error?: string;
@@ -27,17 +27,6 @@ function readCredentials(formData: FormData): Credentials | null {
 
   if (!email || !email.includes("@") || !password) return null;
   return { email, password };
-}
-
-/** OAuth 콜백이 돌아올 주소. 배포 도메인이 바뀌어도 요청 헤더에서 뽑는다. */
-async function originFromRequest(): Promise<string> {
-  const headerList = await headers();
-  const forwardedHost = headerList.get("x-forwarded-host");
-  const host = forwardedHost ?? headerList.get("host") ?? "localhost:3000";
-  const proto =
-    headerList.get("x-forwarded-proto") ??
-    (host.startsWith("localhost") ? "http" : "https");
-  return `${proto}://${host}`;
 }
 
 export async function signIn(
@@ -78,7 +67,7 @@ export async function signUp(
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.auth.signUp({
     ...credentials,
-    options: { emailRedirectTo: `${await originFromRequest()}/auth/callback` },
+    options: { emailRedirectTo: `${await requestOrigin()}/auth/callback` },
   });
   if (error) return { error: authErrorMessage(error.message), email };
 
@@ -101,7 +90,7 @@ export async function signInWithKakao(_formData: FormData): Promise<void> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "kakao",
-    options: { redirectTo: `${await originFromRequest()}/auth/callback` },
+    options: { redirectTo: `${await requestOrigin()}/auth/callback` },
   });
 
   if (error || !data.url) {
