@@ -60,10 +60,16 @@ grant execute on function public.find_shared_estimate(text) to anon, authenticat
  * 고객에게 이미 보낸 링크가 다시 공유했다는 이유로 죽으면 안 된다.
  *
  * SECURITY INVOKER(기본값)이라 RLS가 그대로 걸린다.
+ *
+ * search_path를 고정한다. gen_random_bytes는 pgcrypto에 있고 Supabase는
+ * 그걸 extensions 스키마에 둔다. 호출자의 search_path에 기대면 설정이 조금만
+ * 달라도 "function gen_random_bytes does not exist"로 죽는다.
+ * (public도 넣어 둔다. pgcrypto를 public에 설치한 프로젝트도 있다.)
  */
 create or replace function public.enable_estimate_sharing(p_estimate_id uuid)
 returns text
 language plpgsql
+set search_path = public, extensions
 as $$
 declare
   v_token text;

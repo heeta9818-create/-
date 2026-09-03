@@ -27,6 +27,8 @@ Supabase 설정 없이도 그냥 돈다. 이때는 **로그인이 꺼진 개발 
 
 ```bash
 npm test         # 119개 — 견적 엔진, 폼 검증, 인증 가드, 사용자 격리, 견적 이력, 공유, 단가표
+npm run test:db  # 34개 — 마이그레이션을 진짜 Postgres에 돌려 본다 (아래 참고)
+npm run test:all # 둘 다
 npm run typecheck
 npm run lint
 npm run build
@@ -55,6 +57,7 @@ src/lib/data/       ← 저장소. 인터페이스 하나에 구현 두 개
 src/app/            ← 화면 (Next.js App Router)
 src/proxy.ts        ← 매 요청 Supabase 세션 갱신 (Next 16의 미들웨어)
 supabase/migrations ← DB 스키마 (owner_id + RLS 포함)
+supabase/test/      ← 마이그레이션을 진짜 Postgres에 돌려 보는 테스트
 ```
 
 **견적 엔진(`src/lib/domain/estimate.ts`)이 이 앱의 핵심이다.** UI 없이 단위 테스트로
@@ -247,6 +250,46 @@ RLS 때문에 로그인 없이는 아무것도 못 읽는데, 공개 견적서�
 
 로컬에서 프로덕션 빌드를 확인할 때만 `ALLOW_INSECURE_DEV_AUTH=true`로 푼다.
 실제 배포 환경에는 절대 넣지 말 것.
+
+## 마이그레이션 테스트
+
+SQL은 타입 검사도 린트도 안 걸린다. RLS 정책 한 줄이 틀리면 남의 데이터가
+새고, 함수 설정 하나가 빠지면 배포하고 나서야 죽는다. 실제로 돌려 보는 것
+말고는 확인할 방법이 없다.
+
+```bash
+npm run test:db
+```
+
+임시 Postgres를 띄우고 → Supabase가 기본으로 갖고 있는 것들(`anon`·
+`authenticated` 역할, `auth.users`, `auth.uid()`, public 스키마 기본 권한)을
+만들고 → 마이그레이션을 순서대로 올리고 → 34개 검사를 돌린 뒤 → 클러스터를
+지운다. 남는 것 없다.
+
+로컬에 Postgres 서버가 있어야 한다 (`PG_BIN`으로 경로 지정 가능, 기본
+`/usr/lib/postgresql/16/bin`). 없으면 `npm test`가 이 묶음을 건너뛴다.
+
+무엇을 확인하나:
+
+- **사용자 격리** — 남의 현장·견적·단가표가 안 보이고, 남의 id로 등록도 안 된다
+- **견적 스냅샷 불변** — 저장된 `result`·`total`·`label`은 수정이 거부되고
+  `share_token`만 고칠 수 있다 (RLS는 행 단위라 컬럼을 못 가린다. 컬럼 권한으로 막았다)
+- **차수** — 동시에 10건을 저장해도 1~10이 겹치지 않고, 중간을 지워도 번호를
+  재사용하지 않는다
+- **공개 링크** — 로그인 없이 열쇠로만 조회되고, 내부 메모는 결과에 없고,
+  견적이나 현장을 지우면 링크가 죽는다
+- **앱과 스키마의 합** — `supabase-repo.ts`가 문자열로 부르는 컬럼·함수 인자
+  이름이 실제 스키마와 같은지. 오타는 타입 검사에 안 걸린다
+
+`supabase/test/preamble.sql`이 Supabase 환경을 흉내 낸다. **여기가 실제와
+다르면 검증이 헛것이 되므로** 고칠 때는 Supabase 문서를 확인할 것.
+
+### 아직 확인 못 한 것
+
+이 테스트는 **데이터베이스까지**다. Supabase의 HTTP 계층(PostgREST)과
+로그인 서버(GoTrue)는 별도 프로세스라 여기서 띄우지 못했다. 그래서
+supabase-js가 실제로 주고받는 부분 — 로그인 왕복, RPC 호출의 직렬화 —
+은 실제 프로젝트에 붙여서 한 번 확인해야 한다.
 
 ## Supabase 붙이기
 
