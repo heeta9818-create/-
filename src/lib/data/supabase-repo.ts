@@ -1,6 +1,8 @@
+import type { EstimateInput, EstimateResult } from "@/lib/domain/estimate";
+import type { NewEstimate, SavedEstimate } from "@/lib/domain/saved-estimate";
 import type { Site, SiteInput, SiteStatus } from "@/lib/domain/site";
 import type { WallpaperKind } from "@/lib/domain/wallpaper";
-import type { SiteRepository } from "./repository";
+import type { EstimateRepository, SiteRepository } from "./repository";
 import { createSupabaseServerClient } from "./supabase/server";
 
 /** DB 컬럼(snake_case) ↔ 도메인 모델(camelCase) 변환 */
@@ -117,6 +119,102 @@ export const supabaseSiteRepository: SiteRepository = {
     const supabase = await createSupabaseServerClient();
     const { error } = await supabase
       .from("sites")
+      .delete()
+      .eq("id", id)
+      .eq("owner_id", ownerId);
+    if (error) throw error;
+  },
+
+  async setEstimateTotal(id, ownerId, estimateTotal) {
+    const supabase = await createSupabaseServerClient();
+    const { error } = await supabase
+      .from("sites")
+      .update({ estimate_total: estimateTotal })
+      .eq("id", id)
+      .eq("owner_id", ownerId);
+    if (error) throw error;
+  },
+};
+
+/* ---------------------------------------------------------------- 견적 이력 */
+
+interface EstimateRow {
+  id: string;
+  site_id: string;
+  created_at: string;
+  version: number;
+  label: string | null;
+  memo: string | null;
+  input: EstimateInput;
+  result: EstimateResult;
+  total: number;
+}
+
+function toEstimate(row: EstimateRow): SavedEstimate {
+  return {
+    id: row.id,
+    siteId: row.site_id,
+    createdAt: row.created_at,
+    version: row.version,
+    label: row.label ?? "",
+    memo: row.memo ?? "",
+    input: row.input,
+    result: row.result,
+    total: row.total,
+  };
+}
+
+export const supabaseEstimateRepository: EstimateRepository = {
+  async listForSite(siteId, ownerId) {
+    const supabase = await createSupabaseServerClient();
+    const { data, error } = await supabase
+      .from("estimates")
+      .select("*")
+      .eq("site_id", siteId)
+      .eq("owner_id", ownerId)
+      .order("version", { ascending: false });
+
+    if (error) throw error;
+    return (data as EstimateRow[]).map(toEstimate);
+  },
+
+  async get(id, ownerId) {
+    const supabase = await createSupabaseServerClient();
+    const { data, error } = await supabase
+      .from("estimates")
+      .select("*")
+      .eq("id", id)
+      .eq("owner_id", ownerId)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data ? toEstimate(data as EstimateRow) : null;
+  },
+
+  async create(ownerId, siteId, data: NewEstimate) {
+    const supabase = await createSupabaseServerClient();
+
+    // 차수는 DB 함수가 매긴다. 앱에서 조회 후 +1 하면 동시에 두 건이
+    // 저장될 때 같은 차수가 두 번 나올 수 있다.
+    const { data: row, error } = await supabase
+      .rpc("create_estimate", {
+        p_site_id: siteId,
+        p_label: data.label || null,
+        p_memo: data.memo || null,
+        p_input: data.input,
+        p_result: data.result,
+        p_total: data.result.total,
+      })
+      .single();
+
+    if (error) throw error;
+    return toEstimate(row as EstimateRow);
+  },
+
+  async remove(id, ownerId) {
+    const supabase = await createSupabaseServerClient();
+    const { error } = await supabase
+      .from("estimates")
       .delete()
       .eq("id", id)
       .eq("owner_id", ownerId);

@@ -1,3 +1,4 @@
+import type { NewEstimate, SavedEstimate } from "@/lib/domain/saved-estimate";
 import type { Site, SiteInput } from "@/lib/domain/site";
 
 /**
@@ -16,6 +17,23 @@ export interface SiteRepository {
     estimateTotal: number,
   ): Promise<Site | null>;
   remove(id: string, ownerId: string): Promise<void>;
+  /** 견적을 저장했을 때 목록·대시보드에 보이는 금액만 갱신한다. */
+  setEstimateTotal(
+    id: string,
+    ownerId: string,
+    estimateTotal: number,
+  ): Promise<void>;
+}
+
+export interface EstimateRepository {
+  listForSite(siteId: string, ownerId: string): Promise<SavedEstimate[]>;
+  get(id: string, ownerId: string): Promise<SavedEstimate | null>;
+  create(
+    ownerId: string,
+    siteId: string,
+    data: NewEstimate,
+  ): Promise<SavedEstimate>;
+  remove(id: string, ownerId: string): Promise<void>;
 }
 
 /** Supabase 환경변수가 모두 있으면 Supabase를, 없으면 로컬 파일 저장소를 쓴다. */
@@ -26,15 +44,27 @@ export function isSupabaseConfigured(): boolean {
   );
 }
 
-let cached: SiteRepository | null = null;
+let cachedSites: SiteRepository | null = null;
+let cachedEstimates: EstimateRepository | null = null;
 
 export async function getSiteRepository(): Promise<SiteRepository> {
-  if (cached) return cached;
+  if (cachedSites) return cachedSites;
 
   const repo = isSupabaseConfigured()
     ? (await import("./supabase-repo")).supabaseSiteRepository
     : (await import("./file-repo")).fileSiteRepository;
 
-  cached = repo;
+  cachedSites = repo;
+  return repo;
+}
+
+export async function getEstimateRepository(): Promise<EstimateRepository> {
+  if (cachedEstimates) return cachedEstimates;
+
+  const repo = isSupabaseConfigured()
+    ? (await import("./supabase-repo")).supabaseEstimateRepository
+    : (await import("./file-repo")).fileEstimateRepository;
+
+  cachedEstimates = repo;
   return repo;
 }

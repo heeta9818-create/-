@@ -78,9 +78,10 @@ describe("현장 기본 견적", () => {
     const result = estimateForSite(parsed.data);
     expect(result.rolls).toBeGreaterThan(0);
     expect(result.total).toBeGreaterThan(0);
-    // 기본 견적에는 마진·부가세가 붙지 않는다.
+    // 부가세는 별도지만 마진은 기본값이 붙는다. 견적 계산기 초기값과
+    // 같아야 아무것도 바꾸지 않고 저장했을 때 금액이 튀지 않는다.
     expect(result.vat).toBe(0);
-    expect(result.items.some((i) => i.label === "관리비·마진")).toBe(false);
+    expect(result.items.some((i) => i.label === "관리비·마진")).toBe(true);
   });
 
   it("천장을 빼면 견적이 내려간다", () => {

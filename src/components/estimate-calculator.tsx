@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useActionState, useMemo, useState } from "react";
 import { Card, Field, inputClass } from "@/components/ui";
+import { EstimateBreakdown } from "@/components/estimate-breakdown";
 import {
   calculateEstimate,
   type EstimateInput,
@@ -12,7 +13,6 @@ import {
   WALLPAPER_SPECS,
   type WallpaperKind,
 } from "@/lib/domain/wallpaper";
-import { m2, won } from "@/lib/format";
 
 type Method = "pyeong" | "measured";
 
@@ -25,23 +25,57 @@ const EMPTY_ROOM: RoomMeasure = {
   windows: 1,
 };
 
-export function EstimateCalculator() {
-  const [method, setMethod] = useState<Method>("pyeong");
-  const [pyeong, setPyeong] = useState(25);
-  const [basis, setBasis] = useState<"supply" | "exclusive">("supply");
-  const [rooms, setRooms] = useState<RoomMeasure[]>([
-    { ...EMPTY_ROOM, name: "안방" },
-  ]);
+export interface SaveEstimateState {
+  error?: string;
+}
 
-  const [kind, setKind] = useState<WallpaperKind>("silk");
-  const [includeCeiling, setIncludeCeiling] = useState(true);
-  const [patterned, setPatterned] = useState(false);
+export type SaveEstimateAction = (
+  state: SaveEstimateState,
+  formData: FormData,
+) => Promise<SaveEstimateState>;
 
-  const [rollPrice, setRollPrice] = useState(WALLPAPER_SPECS.silk.defaultRollPrice);
-  const [dailyWage, setDailyWage] = useState<number>(DEFAULTS.dailyWage);
-  const [marginPercent, setMarginPercent] = useState(15);
-  const [travelFee, setTravelFee] = useState(0);
-  const [includeVat, setIncludeVat] = useState(false);
+export function EstimateCalculator({
+  initialInput,
+  saveAction,
+}: {
+  /** 현장 정보나 직전 견적에서 이어받는 초기값 */
+  initialInput?: EstimateInput;
+  /** 넘기면 저장 영역이 붙는다. 없으면 계산만 하는 화면 */
+  saveAction?: SaveEstimateAction;
+}) {
+  const initialScope = initialInput?.scope;
+
+  const [method, setMethod] = useState<Method>(initialScope?.method ?? "pyeong");
+  const [pyeong, setPyeong] = useState(
+    initialScope?.method === "pyeong" ? initialScope.pyeong : 25,
+  );
+  const [basis, setBasis] = useState<"supply" | "exclusive">(
+    initialScope?.method === "pyeong" ? initialScope.basis : "supply",
+  );
+  const [rooms, setRooms] = useState<RoomMeasure[]>(
+    initialScope?.method === "measured"
+      ? initialScope.rooms
+      : [{ ...EMPTY_ROOM, name: "안방" }],
+  );
+
+  const [kind, setKind] = useState<WallpaperKind>(initialInput?.kind ?? "silk");
+  const [includeCeiling, setIncludeCeiling] = useState(
+    initialInput?.includeCeiling ?? true,
+  );
+  const [patterned, setPatterned] = useState(initialInput?.patterned ?? false);
+
+  const [rollPrice, setRollPrice] = useState(
+    initialInput?.rollPrice ??
+      WALLPAPER_SPECS[initialInput?.kind ?? "silk"].defaultRollPrice,
+  );
+  const [dailyWage, setDailyWage] = useState<number>(
+    initialInput?.dailyWage ?? DEFAULTS.dailyWage,
+  );
+  const [marginPercent, setMarginPercent] = useState(
+    Math.round((initialInput?.marginRate ?? DEFAULTS.marginRate) * 100),
+  );
+  const [travelFee, setTravelFee] = useState(initialInput?.travelFee ?? 0);
+  const [includeVat, setIncludeVat] = useState(initialInput?.includeVat ?? false);
 
   function changeKind(next: WallpaperKind) {
     setKind(next);
@@ -55,8 +89,8 @@ export function EstimateCalculator() {
     );
   }
 
-  const result = useMemo(() => {
-    const input: EstimateInput = {
+  const input = useMemo<EstimateInput>(
+    () => ({
       scope:
         method === "pyeong"
           ? { method: "pyeong", pyeong, basis }
@@ -69,22 +103,24 @@ export function EstimateCalculator() {
       travelFee: travelFee || undefined,
       marginRate: marginPercent / 100,
       includeVat,
-    };
-    return calculateEstimate(input);
-  }, [
-    method,
-    pyeong,
-    basis,
-    rooms,
-    kind,
-    includeCeiling,
-    patterned,
-    rollPrice,
-    dailyWage,
-    travelFee,
-    marginPercent,
-    includeVat,
-  ]);
+    }),
+    [
+      method,
+      pyeong,
+      basis,
+      rooms,
+      kind,
+      includeCeiling,
+      patterned,
+      rollPrice,
+      dailyWage,
+      travelFee,
+      marginPercent,
+      includeVat,
+    ],
+  );
+
+  const result = useMemo(() => calculateEstimate(input), [input]);
 
   return (
     <div className="space-y-5 px-5 pb-8">
@@ -298,53 +334,71 @@ export function EstimateCalculator() {
         </div>
       </details>
 
-      <Card>
-        <div className="grid grid-cols-3 gap-4 text-center">
-          <div>
-            <p className="text-xs text-muted">시공면적</p>
-            <p className="mt-1 font-bold">{m2(result.area.netAreaM2)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted">벽지</p>
-            <p className="mt-1 font-bold">{result.rolls}롤</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted">품</p>
-            <p className="mt-1 font-bold">{result.workerDays}품</p>
-          </div>
-        </div>
+      <EstimateBreakdown result={result} />
 
-        <table className="mt-4 w-full border-t border-line text-sm">
-          <tbody>
-            {result.items.map((item) => (
-              <tr key={item.label} className="border-b border-line">
-                <td className="py-2.5 pr-3">
-                  <p className="font-medium">{item.label}</p>
-                  {item.detail ? (
-                    <p className="text-xs text-muted">{item.detail}</p>
-                  ) : null}
-                </td>
-                <td className="py-2.5 text-right font-medium whitespace-nowrap">
-                  {won(item.amount)}
-                </td>
-              </tr>
-            ))}
-            {result.vat > 0 ? (
-              <tr className="border-b border-line">
-                <td className="py-2.5">부가세</td>
-                <td className="py-2.5 text-right whitespace-nowrap">
-                  {won(result.vat)}
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-
-        <div className="mt-3 flex items-center justify-between">
-          <span className="font-semibold">합계</span>
-          <span className="text-2xl font-bold">{won(result.total)}</span>
-        </div>
-      </Card>
+      {saveAction ? <SaveEstimate action={saveAction} input={input} /> : null}
     </div>
+  );
+}
+
+/**
+ * 저장 영역.
+ *
+ * 화면에 보이는 금액은 브라우저가 계산한 값이라 그대로 저장하지 않는다.
+ * 입력(input)만 JSON으로 넘기고 금액은 서버가 다시 계산한다.
+ */
+function SaveEstimate({
+  action,
+  input,
+}: {
+  action: SaveEstimateAction;
+  input: EstimateInput;
+}) {
+  const [state, formAction, pending] = useActionState<
+    SaveEstimateState,
+    FormData
+  >(action, {});
+
+  return (
+    <form action={formAction} className="space-y-4">
+      <input type="hidden" name="input" value={JSON.stringify(input)} />
+
+      <Field label="견적 이름" hint="비우면 차수로 표시됩니다">
+        <input
+          name="label"
+          maxLength={50}
+          placeholder="실측 후 2차"
+          className={inputClass}
+        />
+      </Field>
+
+      <Field label="메모">
+        <textarea
+          name="memo"
+          rows={2}
+          maxLength={1000}
+          placeholder="천장 제외 요청, 자재는 고객 직접 구매 …"
+          className={inputClass}
+        />
+      </Field>
+
+      {state.error ? (
+        <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+          {state.error}
+        </p>
+      ) : null}
+
+      <button
+        type="submit"
+        disabled={pending}
+        className="w-full rounded-lg bg-brand px-4 py-3.5 font-medium text-white disabled:opacity-50"
+      >
+        {pending ? "저장 중…" : "이 견적 저장"}
+      </button>
+
+      <p className="text-xs text-muted">
+        저장한 견적은 나중에 단가 기본값이 바뀌어도 금액이 그대로 남습니다.
+      </p>
+    </form>
   );
 }

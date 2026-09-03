@@ -1,5 +1,6 @@
 import { calculateEstimate, type EstimateInput, type EstimateResult } from "./estimate";
 import type { SiteInput } from "./site";
+import { DEFAULTS } from "./wallpaper";
 
 /**
  * 현장 정보만으로 뽑는 기본 견적.
@@ -12,6 +13,7 @@ export function siteEstimateInput(site: SiteInput): EstimateInput {
     kind: site.wallpaperKind,
     includeCeiling: site.includeCeiling,
     patterned: site.patterned,
+    marginRate: DEFAULTS.marginRate,
   };
 }
 

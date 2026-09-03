@@ -89,4 +89,9 @@ export const DEFAULTS = {
   subMaterialPerM2: 1_200,
   /** 부가세율 */
   vatRate: 0.1,
+  /**
+   * 기본 마진율. 현장의 기본 견적과 견적 계산기의 초기값이 같아야
+   * 아무것도 바꾸지 않고 저장했을 때 금액이 튀지 않는다.
+   */
+  marginRate: 0.15,
 } as const;

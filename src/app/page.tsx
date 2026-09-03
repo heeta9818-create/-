@@ -126,7 +126,7 @@ export default async function HomePage() {
         {!isSupabaseConfigured() ? (
           <p className="rounded-lg border border-dashed border-line px-4 py-3 text-xs text-muted">
             로그인이 꺼진 개발 모드입니다. 데이터는{" "}
-            <code>.data/sites.json</code>에 저장됩니다. Supabase 환경변수를
+            <code>.data/</code> 아래 파일에 저장됩니다. Supabase 환경변수를
             넣으면 로그인과 클라우드 저장이 함께 켜집니다.
           </p>
         ) : null}

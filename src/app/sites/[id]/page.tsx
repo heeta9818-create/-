@@ -1,22 +1,35 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
+import { EstimateBreakdown } from "@/components/estimate-breakdown";
 import { Card, PageHeader, StatusBadge } from "@/components/ui";
 import { SiteActions } from "@/components/site-actions";
 import { requireUser } from "@/lib/auth/user";
-import { getSiteRepository } from "@/lib/data/repository";
+import {
+  getEstimateRepository,
+  getSiteRepository,
+} from "@/lib/data/repository";
+import { estimateTitle } from "@/lib/domain/saved-estimate";
 import { estimateForSite } from "@/lib/domain/site-estimate";
 import { WALLPAPER_SPECS } from "@/lib/domain/wallpaper";
-import { m2, shortDate, won } from "@/lib/format";
+import { shortDate, won } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
 export default async function SiteDetailPage(props: PageProps<"/sites/[id]">) {
   const { id } = await props.params;
+
   const user = await requireUser();
   const repo = await getSiteRepository();
   const site = await repo.get(id, user.id);
   if (!site) notFound();
 
-  const estimate = estimateForSite(site);
+  const estimateRepo = await getEstimateRepository();
+  const history = await estimateRepo.listForSite(id, user.id);
+  const latest = history[0];
+
+  // 저장된 견적이 있으면 그게 이 현장의 견적이다.
+  // 없으면 현장 정보만으로 뽑은 기본 견적을 보여준다.
+  const shown = latest ? latest.result : estimateForSite(site);
   const spec = WALLPAPER_SPECS[site.wallpaperKind];
 
   const info: [string, string][] = [
@@ -52,63 +65,66 @@ export default async function SiteDetailPage(props: PageProps<"/sites/[id]">) {
         </Card>
 
         <section>
-          <h2 className="mb-3 text-sm font-semibold text-muted">물량 산출</h2>
-          <Card>
-            <div className="grid grid-cols-3 gap-4 text-center">
-              <div>
-                <p className="text-xs text-muted">시공면적</p>
-                <p className="mt-1 font-bold">{m2(estimate.area.netAreaM2)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted">벽지</p>
-                <p className="mt-1 font-bold">{estimate.rolls}롤</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted">품</p>
-                <p className="mt-1 font-bold">{estimate.workerDays}품</p>
-              </div>
-            </div>
-            <p className="mt-4 border-t border-line pt-3 text-xs text-muted">
-              벽 {m2(estimate.area.wallAreaM2)} + 천장{" "}
-              {m2(estimate.area.ceilingAreaM2)} · 로스{" "}
-              {Math.round(estimate.area.lossRate * 100)}% 포함 소요{" "}
-              {m2(estimate.area.requiredAreaM2)} · 롤당 {estimate.rollAreaM2}m²
-            </p>
-          </Card>
+          <div className="mb-3 flex items-baseline justify-between gap-3">
+            <h2 className="text-sm font-semibold text-muted">
+              {latest ? estimateTitle(latest) : "기본 견적"}
+            </h2>
+            {latest ? (
+              <Link
+                href={`/sites/${id}/estimates/${latest.id}`}
+                className="no-print text-sm font-medium text-brand"
+              >
+                견적서 보기
+              </Link>
+            ) : null}
+          </div>
+
+          <EstimateBreakdown
+            result={shown}
+            footnote={
+              latest
+                ? `${shortDate(latest.createdAt.slice(0, 10))}에 저장한 금액입니다.`
+                : "아직 저장한 견적이 없습니다. 현장 정보와 기본 단가로 뽑은 값이라 단가를 손보면 달라집니다."
+            }
+          />
+
+          <Link
+            href={`/sites/${id}/estimate`}
+            className="no-print mt-3 block rounded-lg bg-brand px-4 py-3.5 text-center font-medium text-white"
+          >
+            {latest ? "견적 다시 잡기" : "견적 잡고 저장하기"}
+          </Link>
         </section>
 
-        <section>
-          <h2 className="mb-3 text-sm font-semibold text-muted">견적</h2>
-          <Card>
-            <table className="w-full text-sm">
-              <tbody>
-                {estimate.items.map((item) => (
-                  <tr key={item.label} className="border-b border-line">
-                    <td className="py-2.5 pr-3">
-                      <p className="font-medium">{item.label}</p>
-                      {item.detail ? (
-                        <p className="text-xs text-muted">{item.detail}</p>
-                      ) : null}
-                    </td>
-                    <td className="py-2.5 text-right font-medium whitespace-nowrap">
-                      {won(item.amount)}
-                    </td>
-                  </tr>
-                ))}
-                <tr>
-                  <td className="pt-3 font-semibold">합계</td>
-                  <td className="pt-3 text-right text-lg font-bold whitespace-nowrap">
+        {history.length > 0 ? (
+          <section className="no-print">
+            <h2 className="mb-3 text-sm font-semibold text-muted">
+              견적 이력 {history.length}건
+            </h2>
+            <Card className="py-1">
+              {history.map((estimate) => (
+                <Link
+                  key={estimate.id}
+                  href={`/sites/${id}/estimates/${estimate.id}`}
+                  className="flex items-center justify-between gap-3 border-b border-line py-3 last:border-0"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">
+                      {estimateTitle(estimate)}
+                    </p>
+                    <p className="truncate text-sm text-muted">
+                      {shortDate(estimate.createdAt.slice(0, 10))}
+                      {estimate.memo ? ` · ${estimate.memo}` : ""}
+                    </p>
+                  </div>
+                  <span className="shrink-0 font-medium whitespace-nowrap">
                     {won(estimate.total)}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-            <p className="mt-3 text-xs text-muted">
-              부가세 별도 · 기본 단가 기준입니다. 단가와 마진을 손보려면 견적
-              계산기를 쓰세요.
-            </p>
-          </Card>
-        </section>
+                  </span>
+                </Link>
+              ))}
+            </Card>
+          </section>
+        ) : null}
 
         {site.memo ? (
           <section>

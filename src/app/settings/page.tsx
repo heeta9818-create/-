@@ -34,7 +34,7 @@ export default async function SettingsPage() {
             <p className="text-sm font-medium">로그인이 꺼진 개발 모드</p>
             <p className="mt-2 text-sm text-muted">
               Supabase 환경변수가 없어 고정된 개발용 계정으로 동작합니다.
-              데이터는 <code>.data/sites.json</code>에 저장되고, 다른 사람과
+              데이터는 <code>.data/</code> 아래 파일에 저장되고, 다른 사람과
               분리되지 않습니다. 실제로 쓰려면 Supabase를 설정하세요.
             </p>
           </Card>
