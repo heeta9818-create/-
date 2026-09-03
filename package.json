@@ -11,7 +11,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:db": "./scripts/with-test-db.sh npx vitest run supabase/test",
-    "test:all": "npm test && npm run test:db"
+    "test:all": "npm test && npm run test:db",
+    "db:bundle": "node scripts/bundle-migrations.mjs",
+    "check:supabase": "node scripts/check-supabase.mjs",
+    "db:postgrest": "./scripts/get-postgrest.sh"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

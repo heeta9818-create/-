@@ -43,3 +43,6 @@ next-env.d.ts
 
 # 로컬 개발용 파일 저장소
 .data/
+
+# PostgREST 실행 파일 (npm run db:postgrest)
+/.cache

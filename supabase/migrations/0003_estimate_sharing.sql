@@ -5,6 +5,11 @@
 -- 잘못 쓰면 전부 새어나간다), 열쇠로만 한 건을 꺼내는 함수를 따로 만들고
 -- 그 함수만 anon에게 준다.
 
+-- 공유 열쇠를 만들 때 gen_random_bytes를 쓴다. pgcrypto에 들어 있고
+-- Supabase 프로젝트에는 이미 켜져 있지만, 없는 환경을 대비해 확인한다.
+create schema if not exists extensions;
+create extension if not exists pgcrypto with schema extensions;
+
 alter table public.estimates
   add column share_token text unique
     check (share_token is null or length(share_token) >= 32);

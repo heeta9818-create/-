@@ -27,7 +27,7 @@ Supabase 설정 없이도 그냥 돈다. 이때는 **로그인이 꺼진 개발 
 
 ```bash
 npm test         # 119개 — 견적 엔진, 폼 검증, 인증 가드, 사용자 격리, 견적 이력, 공유, 단가표
-npm run test:db  # 34개 — 마이그레이션을 진짜 Postgres에 돌려 본다 (아래 참고)
+npm run test:db  # 34개(+17개) — 진짜 Postgres/PostgREST에 돌려 본다 (아래 참고)
 npm run test:all # 둘 다
 npm run typecheck
 npm run lint
@@ -57,7 +57,8 @@ src/lib/data/       ← 저장소. 인터페이스 하나에 구현 두 개
 src/app/            ← 화면 (Next.js App Router)
 src/proxy.ts        ← 매 요청 Supabase 세션 갱신 (Next 16의 미들웨어)
 supabase/migrations ← DB 스키마 (owner_id + RLS 포함)
-supabase/test/      ← 마이그레이션을 진짜 Postgres에 돌려 보는 테스트
+supabase/setup.sql  ← 위 파일들을 합친 것 (대시보드에 붙여넣는 용도)
+supabase/test/      ← 진짜 Postgres/PostgREST에 돌려 보는 테스트
 ```
 
 **견적 엔진(`src/lib/domain/estimate.ts`)이 이 앱의 핵심이다.** UI 없이 단위 테스트로
@@ -251,25 +252,28 @@ RLS 때문에 로그인 없이는 아무것도 못 읽는데, 공개 견적서�
 로컬에서 프로덕션 빌드를 확인할 때만 `ALLOW_INSECURE_DEV_AUTH=true`로 푼다.
 실제 배포 환경에는 절대 넣지 말 것.
 
-## 마이그레이션 테스트
+## 데이터베이스 테스트
 
 SQL은 타입 검사도 린트도 안 걸린다. RLS 정책 한 줄이 틀리면 남의 데이터가
-새고, 함수 설정 하나가 빠지면 배포하고 나서야 죽는다. 실제로 돌려 보는 것
-말고는 확인할 방법이 없다.
+새고, 함수 설정 하나가 빠지면 배포하고 나서야 죽는다. `supabase-repo.ts`가
+문자열로 쓰는 컬럼 이름도 마찬가지다. 실제로 돌려 보는 것 말고는 확인할
+방법이 없다.
 
 ```bash
-npm run test:db
+npm run test:db        # 34개 — SQL만
+npm run db:postgrest   # PostgREST 내려받기 (한 번만)
+POSTGREST_BIN=.cache/postgrest npm run test:db   # 51개 — 저장소 코드까지
 ```
 
 임시 Postgres를 띄우고 → Supabase가 기본으로 갖고 있는 것들(`anon`·
 `authenticated` 역할, `auth.users`, `auth.uid()`, public 스키마 기본 권한)을
-만들고 → 마이그레이션을 순서대로 올리고 → 34개 검사를 돌린 뒤 → 클러스터를
-지운다. 남는 것 없다.
+만들고 → 마이그레이션을 순서대로 올리고 → 검사를 돌린 뒤 → 전부 지운다.
+남는 것 없다.
 
 로컬에 Postgres 서버가 있어야 한다 (`PG_BIN`으로 경로 지정 가능, 기본
 `/usr/lib/postgresql/16/bin`). 없으면 `npm test`가 이 묶음을 건너뛴다.
 
-무엇을 확인하나:
+### 1층 — 스키마와 정책 (34개)
 
 - **사용자 격리** — 남의 현장·견적·단가표가 안 보이고, 남의 id로 등록도 안 된다
 - **견적 스냅샷 불변** — 저장된 `result`·`total`·`label`은 수정이 거부되고
@@ -278,30 +282,96 @@ npm run test:db
   재사용하지 않는다
 - **공개 링크** — 로그인 없이 열쇠로만 조회되고, 내부 메모는 결과에 없고,
   견적이나 현장을 지우면 링크가 죽는다
-- **앱과 스키마의 합** — `supabase-repo.ts`가 문자열로 부르는 컬럼·함수 인자
-  이름이 실제 스키마와 같은지. 오타는 타입 검사에 안 걸린다
+- **앱과 스키마의 합** — 컬럼·함수 인자 이름이 실제 스키마와 같은지
 
 `supabase/test/preamble.sql`이 Supabase 환경을 흉내 낸다. **여기가 실제와
 다르면 검증이 헛것이 되므로** 고칠 때는 Supabase 문서를 확인할 것.
 
+### 2층 — 저장소 코드 (17개, PostgREST 필요)
+
+PostgREST는 Supabase가 `/rest/v1` 뒤에 얹어 두는 HTTP 창구다. 이걸 띄우면
+`supabase-repo.ts`를 **고친 데 없이 그대로** 불러서 진짜 요청을 주고받는다.
+스키마를 대조하는 것과 실제로 저장하고 읽어 보는 것은 다르다.
+
+컬럼 이름에 오타를 내면 13개, 함수 인자 이름을 틀리면 3개가 깨진다.
+둘 다 타입 검사로는 절대 못 잡는 종류다.
+
+테스트 클라이언트만 `/rest/v1` 접두사를 떼어 준다 (맨몸 PostgREST는 루트에서
+받는다). 경로 앞부분만 손대고 헤더·질의문자열·본문은 그대로라, 저장소가
+만들어 보내는 요청 자체는 실제와 같다.
+
 ### 아직 확인 못 한 것
 
-이 테스트는 **데이터베이스까지**다. Supabase의 HTTP 계층(PostgREST)과
-로그인 서버(GoTrue)는 별도 프로세스라 여기서 띄우지 못했다. 그래서
-supabase-js가 실제로 주고받는 부분 — 로그인 왕복, RPC 호출의 직렬화 —
-은 실제 프로젝트에 붙여서 한 번 확인해야 한다.
+**로그인(GoTrue)은 여전히 검증 밖이다.** Supabase의 로그인 서버는 별도
+프로그램이라 여기서 띄우지 못했다. 가입 → 메일 인증 → 로그인 왕복은 실제
+프로젝트에서 한 번 확인해야 한다 (`npm run check:supabase`가 그걸 해 준다).
 
 ## Supabase 붙이기
 
-1. Supabase 프로젝트를 만든다
-2. SQL Editor에 `supabase/migrations/`의 파일을 번호 순서대로 실행
-   (`0001_init.sql` → `0002_estimates.sql` → `0003_estimate_sharing.sql`
-   → `0004_settings.sql`)
-3. `.env.example`을 `.env.local`로 복사하고 URL·anon key를 채운다
-4. 서버 재시작 — 로그인과 클라우드 저장이 함께 켜진다
+### 1. 프로젝트 만들기
 
-`repository.ts`가 환경변수 유무만 보고 구현체를 고르기 때문에 화면 코드는
-건드릴 게 없다.
+[supabase.com](https://supabase.com) → New project. 지역은 **Northeast Asia
+(Seoul)**을 고르면 빠르다. 데이터베이스 비밀번호는 어딘가 적어 둘 것 (나중에
+필요하다).
+
+만들어지는 데 2~3분 걸린다.
+
+### 2. 표와 규칙 만들기
+
+대시보드 왼쪽 **SQL Editor** → New query → `supabase/setup.sql` **전체**를
+복사해 붙여넣고 **Run**.
+
+이 파일은 `supabase/migrations/`를 순서대로 합친 것이다. 직접 고치지 말고,
+마이그레이션을 고친 뒤 `npm run db:bundle`로 다시 만든다 (어긋나면 테스트가
+잡는다).
+
+### 3. 열쇠 넣기
+
+대시보드 **Project Settings → API**에서 두 값을 복사한다.
+
+```bash
+cp .env.example .env.local
+```
+
+- **Project URL** → `NEXT_PUBLIC_SUPABASE_URL`
+- **anon public** → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+
+> `service_role` 키는 **넣지 않는다.** 모든 잠금을 무시하는 키라서 브라우저로
+> 나가면 안 된다. 이 앱은 그 키를 쓰지 않는다.
+
+### 4. 제대로 됐는지 확인
+
+```bash
+npm run check:supabase
+```
+
+표와 함수가 다 있는지, 로그인 없이 쓰기가 막히는지, 로그인 서버가 응답하는지
+확인하고 문제가 있으면 무엇을 해야 하는지 알려준다.
+
+실제로 한 바퀴 돌려 보려면 계정을 준다. 현장 등록 → 견적 저장 → 공유 링크 →
+로그인 없이 열어 보기까지 하고, **만든 데이터는 지운다.**
+
+```bash
+npm run check:supabase -- --email 내메일 --password 내비밀번호
+```
+
+### 5. 띄우기
+
+```bash
+npm run dev
+```
+
+`repository.ts`가 환경변수 유무만 보고 저장 위치를 고르기 때문에 화면 코드는
+건드릴 게 없다. 환경변수가 생기는 순간 로그인과 클라우드 저장이 함께 켜진다.
+
+> 이전에 `.data/`에 쌓아 둔 연습 데이터는 넘어가지 않는다. 개발용이라 그렇다.
+
+### 걸리기 쉬운 곳
+
+- **메일 인증** — 가입하면 확인 메일이 간다. 링크를 눌러야 로그인된다.
+  혼자 쓸 거면 Authentication → Sign In / Providers에서 "Confirm email"을 꺼도 된다
+- **프로젝트 일시정지** — 무료 플랜은 일주일 안 쓰면 멈춘다. 대시보드에서 깨우면 된다
+- **`.env.local`은 커밋하지 않는다** — `.gitignore`에 이미 들어 있다
 
 ### 카카오 로그인 (선택)
 

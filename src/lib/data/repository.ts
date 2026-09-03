@@ -77,7 +77,7 @@ export async function getSiteRepository(): Promise<SiteRepository> {
   if (cachedSites) return cachedSites;
 
   const repo = isSupabaseConfigured()
-    ? (await import("./supabase-repo")).supabaseSiteRepository
+    ? (await import("./supabase-repo.server")).supabaseSiteRepository
     : (await import("./file-repo")).fileSiteRepository;
 
   cachedSites = repo;
@@ -88,7 +88,7 @@ export async function getEstimateRepository(): Promise<EstimateRepository> {
   if (cachedEstimates) return cachedEstimates;
 
   const repo = isSupabaseConfigured()
-    ? (await import("./supabase-repo")).supabaseEstimateRepository
+    ? (await import("./supabase-repo.server")).supabaseEstimateRepository
     : (await import("./file-repo")).fileEstimateRepository;
 
   cachedEstimates = repo;
@@ -99,7 +99,7 @@ export async function getSettingsRepository(): Promise<SettingsRepository> {
   if (cachedSettings) return cachedSettings;
 
   const repo = isSupabaseConfigured()
-    ? (await import("./supabase-repo")).supabaseSettingsRepository
+    ? (await import("./supabase-repo.server")).supabaseSettingsRepository
     : (await import("./file-repo")).fileSettingsRepository;
 
   cachedSettings = repo;

@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { EstimateInput, EstimateResult } from "@/lib/domain/estimate";
 import type {
   NewEstimate,
@@ -12,7 +13,16 @@ import type {
   SettingsRepository,
   SiteRepository,
 } from "./repository";
-import { createSupabaseServerClient } from "./supabase/server";
+
+/**
+ * 요청마다 새 클라이언트를 만든다. Next에서는 쿠키가 실려 있는 서버
+ * 클라이언트가 들어오고, 테스트에서는 직접 만든 클라이언트를 넣는다.
+ *
+ * 주입받게 해 둔 이유는 하나다. 이 파일의 쿼리는 컬럼 이름을 문자열로
+ * 쓰기 때문에 타입 검사에 안 걸린다. 실제 PostgREST에 붙여서 돌려 보는
+ * 방법 말고는 확인할 길이 없다.
+ */
+export type GetSupabaseClient = () => Promise<SupabaseClient>;
 
 /** DB 컬럼(snake_case) ↔ 도메인 모델(camelCase) 변환 */
 interface SiteRow {
@@ -72,9 +82,12 @@ function toRow(input: SiteInput, estimateTotal: number) {
  * owner_id 조건은 RLS와 중복이다. 일부러 남겨 둔다 — 정책을 잘못 손대는
  * 순간 조용히 남의 데이터가 새는 것보다, 쿼리에도 조건이 박혀 있는 편이 낫다.
  */
-export const supabaseSiteRepository: SiteRepository = {
+export function createSupabaseSiteRepository(
+  getClient: GetSupabaseClient,
+): SiteRepository {
+  return {
   async list(ownerId) {
-    const supabase = await createSupabaseServerClient();
+    const supabase = await getClient();
     const { data, error } = await supabase
       .from("sites")
       .select("*")
@@ -86,7 +99,7 @@ export const supabaseSiteRepository: SiteRepository = {
   },
 
   async get(id, ownerId) {
-    const supabase = await createSupabaseServerClient();
+    const supabase = await getClient();
     const { data, error } = await supabase
       .from("sites")
       .select("*")
@@ -99,7 +112,7 @@ export const supabaseSiteRepository: SiteRepository = {
   },
 
   async create(ownerId, input, estimateTotal) {
-    const supabase = await createSupabaseServerClient();
+    const supabase = await getClient();
     const { data, error } = await supabase
       .from("sites")
       .insert({ ...toRow(input, estimateTotal), owner_id: ownerId })
@@ -111,7 +124,7 @@ export const supabaseSiteRepository: SiteRepository = {
   },
 
   async update(id, ownerId, input, estimateTotal) {
-    const supabase = await createSupabaseServerClient();
+    const supabase = await getClient();
     const { data, error } = await supabase
       .from("sites")
       .update(toRow(input, estimateTotal))
@@ -125,7 +138,7 @@ export const supabaseSiteRepository: SiteRepository = {
   },
 
   async remove(id, ownerId) {
-    const supabase = await createSupabaseServerClient();
+    const supabase = await getClient();
     const { error } = await supabase
       .from("sites")
       .delete()
@@ -135,7 +148,7 @@ export const supabaseSiteRepository: SiteRepository = {
   },
 
   async setEstimateTotal(id, ownerId, estimateTotal) {
-    const supabase = await createSupabaseServerClient();
+    const supabase = await getClient();
     const { error } = await supabase
       .from("sites")
       .update({ estimate_total: estimateTotal })
@@ -143,7 +156,8 @@ export const supabaseSiteRepository: SiteRepository = {
       .eq("owner_id", ownerId);
     if (error) throw error;
   },
-};
+  };
+}
 
 /* ---------------------------------------------------------------- 견적 이력 */
 
@@ -175,9 +189,12 @@ function toEstimate(row: EstimateRow): SavedEstimate {
   };
 }
 
-export const supabaseEstimateRepository: EstimateRepository = {
+export function createSupabaseEstimateRepository(
+  getClient: GetSupabaseClient,
+): EstimateRepository {
+  return {
   async listForSite(siteId, ownerId) {
-    const supabase = await createSupabaseServerClient();
+    const supabase = await getClient();
     const { data, error } = await supabase
       .from("estimates")
       .select("*")
@@ -190,7 +207,7 @@ export const supabaseEstimateRepository: EstimateRepository = {
   },
 
   async get(id, ownerId) {
-    const supabase = await createSupabaseServerClient();
+    const supabase = await getClient();
     const { data, error } = await supabase
       .from("estimates")
       .select("*")
@@ -203,7 +220,7 @@ export const supabaseEstimateRepository: EstimateRepository = {
   },
 
   async create(ownerId, siteId, data: NewEstimate) {
-    const supabase = await createSupabaseServerClient();
+    const supabase = await getClient();
 
     // 차수는 DB 함수가 매긴다. 앱에서 조회 후 +1 하면 동시에 두 건이
     // 저장될 때 같은 차수가 두 번 나올 수 있다.
@@ -223,7 +240,7 @@ export const supabaseEstimateRepository: EstimateRepository = {
   },
 
   async remove(id, ownerId) {
-    const supabase = await createSupabaseServerClient();
+    const supabase = await getClient();
     const { error } = await supabase
       .from("estimates")
       .delete()
@@ -235,7 +252,7 @@ export const supabaseEstimateRepository: EstimateRepository = {
   async enableSharing(id, _ownerId) {
     // 열쇠 생성과 "이미 있으면 그대로" 판단을 DB 함수가 한 번에 한다.
     // 앱에서 읽고 없으면 쓰는 식이면 동시에 두 번 눌렀을 때 링크가 갈린다.
-    const supabase = await createSupabaseServerClient();
+    const supabase = await getClient();
     const { data, error } = await supabase.rpc("enable_estimate_sharing", {
       p_estimate_id: id,
     });
@@ -245,7 +262,7 @@ export const supabaseEstimateRepository: EstimateRepository = {
   },
 
   async disableSharing(id, ownerId) {
-    const supabase = await createSupabaseServerClient();
+    const supabase = await getClient();
     const { error } = await supabase
       .from("estimates")
       .update({ share_token: null })
@@ -259,7 +276,7 @@ export const supabaseEstimateRepository: EstimateRepository = {
 
     // RLS를 우회하는 security definer 함수다. 열쇠 일치 한 건만 꺼내고
     // 내부 메모나 연락처는 애초에 돌려주지 않는다.
-    const supabase = await createSupabaseServerClient();
+    const supabase = await getClient();
     const { data, error } = await supabase
       .rpc("find_shared_estimate", { p_token: token })
       .maybeSingle();
@@ -289,7 +306,7 @@ export const supabaseEstimateRepository: EstimateRepository = {
   },
 
   async siteIdsWithEstimates(ownerId) {
-    const supabase = await createSupabaseServerClient();
+    const supabase = await getClient();
     const { data, error } = await supabase
       .from("estimates")
       .select("site_id")
@@ -298,13 +315,17 @@ export const supabaseEstimateRepository: EstimateRepository = {
     if (error) throw error;
     return [...new Set((data as { site_id: string }[]).map((r) => r.site_id))];
   },
-};
+  };
+}
 
 /* ------------------------------------------------------------------ 단가표 */
 
-export const supabaseSettingsRepository: SettingsRepository = {
+export function createSupabaseSettingsRepository(
+  getClient: GetSupabaseClient,
+): SettingsRepository {
+  return {
   async get(ownerId) {
-    const supabase = await createSupabaseServerClient();
+    const supabase = await getClient();
     const { data, error } = await supabase
       .from("settings")
       .select("data")
@@ -317,7 +338,7 @@ export const supabaseSettingsRepository: SettingsRepository = {
   },
 
   async save(ownerId, settings) {
-    const supabase = await createSupabaseServerClient();
+    const supabase = await getClient();
     const { error } = await supabase
       .from("settings")
       .upsert(
@@ -327,4 +348,5 @@ export const supabaseSettingsRepository: SettingsRepository = {
 
     if (error) throw error;
   },
-};
+  };
+}
