@@ -408,6 +408,65 @@ npm run dev
   `already exists`가 보이면 이미 만들어진 것이니 그냥 넘어가면 된다
 - **프로젝트 일시정지** — 무료 플랜은 일주일 안 쓰면 멈춘다. 대시보드에서 깨우면 된다
 - **`.env.local`은 커밋하지 않는다** — `.gitignore`에 이미 들어 있다
+- **배포 후 메일 링크가 localhost로 간다** — Supabase의 Site URL을 안 바꾼
+  것이다. 위 "인터넷에 올리기" 4번 참고
+
+## 인터넷에 올리기 (Vercel)
+
+현장에서 폰으로 열려면 인터넷에 올려야 한다. 고객에게 보내는 견적서 링크도
+주소가 있어야 열린다. Vercel 무료 플랜이면 충분하다.
+
+### 1. 기본 브랜치부터 맞춘다
+
+Vercel은 저장소의 **기본 브랜치**를 배포한다. 앱이 든 브랜치가 기본이
+아니면 엉뚱한 걸 배포하거나 아무것도 못 찾는다.
+
+GitHub → 저장소 → **Settings → General → Default branch** 에서 앱이 든
+브랜치로 바꾼다. GitHub에서 파일을 찾을 때도 이게 맞아야 편하다.
+
+### 2. Vercel에 저장소를 붙인다
+
+[vercel.com](https://vercel.com) → GitHub 계정으로 가입 → **Add New → Project**
+→ 이 저장소 **Import**.
+
+Framework는 Next.js로 자동 인식된다. 빌드 설정은 건드릴 것 없다.
+
+### 3. 열쇠 두 개를 넣는다
+
+Import 화면의 **Environment Variables**에 Supabase 대시보드
+(Project Settings → API)의 값을 넣는다.
+
+| 이름 | 값 |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | anon public |
+
+> `service_role` 키는 넣지 않는다. 모든 잠금을 무시하는 키다.
+
+**Deploy**를 누르면 1~2분 뒤 주소가 나온다.
+
+### 4. Supabase에 그 주소를 알려준다
+
+이걸 빼먹으면 **가입 확인 메일의 링크가 localhost로 간다.** 폰에서 누르면
+아무 데도 안 열린다.
+
+Supabase 대시보드 → **Authentication → URL Configuration**
+
+- **Site URL**: Vercel이 준 주소 (`https://….vercel.app`)
+- **Redirect URLs**: `https://….vercel.app/**` 추가
+
+### 서버 위치
+
+`vercel.json`이 서버를 서울(`icn1`)로 고정한다. 화면을 그릴 때마다 서버가
+Supabase에 물어보는데, 서버가 미국에 있고 데이터베이스가 서울에 있으면
+그 왕복이 그대로 느려짐으로 나타난다.
+
+Supabase 프로젝트도 서울(Northeast Asia)에 만들었다면 둘이 같은 도시에 있게
+된다.
+
+### 고친 걸 다시 올리기
+
+기본 브랜치에 커밋을 밀면 Vercel이 알아서 다시 배포한다. 따로 할 게 없다.
 
 ### 카카오 로그인 (선택)
 
