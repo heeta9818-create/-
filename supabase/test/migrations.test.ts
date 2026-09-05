@@ -25,6 +25,7 @@ const PREAMBLE = path.join(process.cwd(), "supabase/test/preamble.sql");
 const SETUP = path.join(process.cwd(), "supabase/setup.sql");
 const RESET = path.join(process.cwd(), "supabase/reset.sql");
 const REINSTALL = path.join(process.cwd(), "supabase/reinstall.sql");
+const REINSTALL_MIN = path.join(process.cwd(), "supabase/reinstall.min.sql");
 
 let pool: Pool;
 let dbName: string;
@@ -369,6 +370,52 @@ describeDb("처음부터 다시 (reset.sql)", () => {
       await expect(client.query(reinstall)).resolves.toBeDefined();
       expect(await tablesOf(client)).toEqual(["estimates", "settings", "sites"]);
     });
+  }, 60_000);
+
+  it("주석 없는 판이 원본과 똑같은 결과를 만든다", async () => {
+    // 채팅에 붙여넣으려고 주석만 뺀 것이다. 설명이 빠졌을 뿐 만들어지는
+    // 표·컬럼·정책·함수가 하나라도 다르면 안 된다.
+    async function schemaOf(file: string) {
+      let snapshot: Record<string, unknown> = {};
+
+      await withFreshDb(async (client) => {
+        await client.query(await readFile(file, "utf8"));
+
+        const columns = await client.query(
+          `select table_name, column_name, data_type, is_nullable, column_default
+             from information_schema.columns
+            where table_schema = 'public'
+            order by table_name, column_name`,
+        );
+        const policies = await client.query(
+          `select tablename, policyname, cmd, qual, with_check
+             from pg_policies where schemaname = 'public'
+            order by tablename, policyname`,
+        );
+        const functions = await client.query(
+          `select p.proname, pg_get_functiondef(p.oid) as def
+             from pg_proc p
+            where p.pronamespace = 'public'::regnamespace
+            order by p.proname`,
+        );
+        const types = await client.query(
+          `select t.typname, e.enumlabel
+             from pg_type t join pg_enum e on e.enumtypid = t.oid
+            order by t.typname, e.enumsortorder`,
+        );
+
+        snapshot = {
+          columns: columns.rows,
+          policies: policies.rows,
+          functions: functions.rows,
+          types: types.rows,
+        };
+      });
+
+      return snapshot;
+    }
+
+    expect(await schemaOf(REINSTALL_MIN)).toEqual(await schemaOf(REINSTALL));
   }, 60_000);
 
   it("로그인 계정은 지우지 않는다", async () => {

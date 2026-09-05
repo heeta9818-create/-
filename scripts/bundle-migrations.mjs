@@ -15,6 +15,7 @@ const DIR = path.join(process.cwd(), "supabase/migrations");
 const OUT = path.join(process.cwd(), "supabase/setup.sql");
 const RESET = path.join(process.cwd(), "supabase/reset.sql");
 const REINSTALL = path.join(process.cwd(), "supabase/reinstall.sql");
+const REINSTALL_MIN = path.join(process.cwd(), "supabase/reinstall.min.sql");
 
 export async function bundle() {
   const files = (await readdir(DIR)).filter((f) => f.endsWith(".sql")).sort();
@@ -66,8 +67,62 @@ export async function bundleReinstall() {
   return `${header}${reset.trimEnd()}\n\n\n${await bundle()}`;
 }
 
+/**
+ * 주석을 뺀 판.
+ *
+ * 채팅이나 좁은 화면에 통째로 붙여넣어야 할 때 쓴다. 설명이 빠졌을 뿐
+ * 실행 결과는 reinstall.sql 과 같아야 하고, 테스트가 그걸 확인한다.
+ */
+export async function bundleReinstallMin() {
+  const source = await bundleReinstall();
+
+  const lines = [];
+  let inBlockComment = false;
+  let inFunctionBody = false;
+
+  for (const raw of source.split("\n")) {
+    const trimmed = raw.trim();
+
+    // 함수 본문($$ ... $$) 안은 건드리지 않는다. 저장되는 정의 자체가
+    // 달라지고, 문자열 안의 `--`를 주석으로 착각해 지울 수도 있다.
+    const dollarQuotes = (raw.match(/\$\$/g) ?? []).length;
+    if (inFunctionBody) {
+      lines.push(raw.trimEnd());
+      if (dollarQuotes % 2 === 1) inFunctionBody = false;
+      continue;
+    }
+    if (dollarQuotes % 2 === 1) {
+      inFunctionBody = true;
+      lines.push(raw.trimEnd());
+      continue;
+    }
+
+    if (trimmed.startsWith("/*")) inBlockComment = true;
+    if (inBlockComment) {
+      if (trimmed.includes("*/")) inBlockComment = false;
+      continue;
+    }
+    if (trimmed.startsWith("--")) continue;
+
+    // 줄 끝에 달린 주석
+    lines.push(raw.replace(/\s+--\s.*$/, "").trimEnd());
+  }
+
+  // 빈 줄이 연달아 나오면 하나로 줄인다.
+  const compact = [];
+  for (const line of lines) {
+    if (!line && !compact.at(-1)) continue;
+    compact.push(line);
+  }
+
+  return `${compact.join("\n").trim()}\n`;
+}
+
 if (import.meta.url === `file://${process.argv[1]}`) {
   await writeFile(OUT, await bundle(), "utf8");
   await writeFile(REINSTALL, await bundleReinstall(), "utf8");
-  console.log("supabase/setup.sql, supabase/reinstall.sql 을 다시 만들었습니다.");
+  await writeFile(REINSTALL_MIN, await bundleReinstallMin(), "utf8");
+  console.log(
+    "supabase/setup.sql, reinstall.sql, reinstall.min.sql 을 다시 만들었습니다.",
+  );
 }
