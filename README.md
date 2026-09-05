@@ -470,14 +470,18 @@ Supabase 대시보드 → **Authentication → URL Configuration**
 - **Site URL**: Vercel이 준 주소 (`https://….vercel.app`)
 - **Redirect URLs**: `https://….vercel.app/**` 추가
 
-### 서버 위치
+### 서버 위치 (선택)
 
-`vercel.json`이 서버를 서울(`icn1`)로 고정한다. 화면을 그릴 때마다 서버가
-Supabase에 물어보는데, 서버가 미국에 있고 데이터베이스가 서울에 있으면
-그 왕복이 그대로 느려짐으로 나타난다.
+이 앱은 화면을 그릴 때마다 서버가 Supabase에 물어본다. 서버가 미국에 있고
+데이터베이스가 서울에 있으면 그 왕복이 그대로 느려짐으로 나타난다.
 
-Supabase 프로젝트도 서울(Northeast Asia)에 만들었다면 둘이 같은 도시에 있게
-된다.
+Vercel 프로젝트 → **Settings → Functions → Function Region** 에서
+**Seoul (icn1)** 을 고른다. Supabase도 서울에 만들었다면 둘이 같은 도시에
+있게 된다.
+
+> `vercel.json`의 `regions` 로도 같은 설정을 할 수 있지만 **그건 유료 플랜
+> 기능이라 Hobby에서는 배포가 실패한다.** 대시보드에서 고르는 쪽은 무료
+> 플랜에서도 된다.
 
 ### 고친 걸 다시 올리기
 
