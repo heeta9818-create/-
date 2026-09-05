@@ -192,6 +192,57 @@ describeDb("몇 번을 실행해도 괜찮다", () => {
     });
   });
 
+  it("중간까지만 실행된 상태에서 다시 실행해도 된다", async () => {
+    // 실제로 겪은 상황이다. 처음 붙여넣기가 중간에 실패해 타입만 만들어졌고,
+    // 다시 실행하니 42710 "type site_status already exists"로 막혔다.
+    // 어디까지 됐는지 모르는 상태에서도 그냥 다시 붙여넣으면 되어야 한다.
+    const half = `create database dobae_half_${Date.now()}`;
+    const dbHalf = half.split(" ").pop()!;
+
+    const admin = new Client({ connectionString: ADMIN_URL });
+    await admin.connect();
+    await admin.query(half);
+    await admin.end();
+
+    const url = new URL(ADMIN_URL!);
+    url.pathname = `/${dbHalf}`;
+    const partial = new Client({ connectionString: url.toString() });
+    await partial.connect();
+
+    try {
+      await partial.query(await readFile(PREAMBLE, "utf8"));
+
+      // 타입만 만들어진 어중간한 상태를 재현한다.
+      await partial.query(`
+        create type site_status as enum
+          ('inquiry','quoted','confirmed','in_progress','done');
+        create type area_basis as enum ('supply','exclusive');
+      `);
+
+      const setup = await readFile(
+        path.join(process.cwd(), "supabase/setup.sql"),
+        "utf8",
+      );
+      await expect(partial.query(setup)).resolves.toBeDefined();
+
+      const { rows } = await partial.query(
+        `select table_name from information_schema.tables
+         where table_schema = 'public' order by table_name`,
+      );
+      expect(rows.map((r) => r.table_name)).toEqual([
+        "estimates",
+        "settings",
+        "sites",
+      ]);
+    } finally {
+      await partial.end();
+      const cleanup = new Client({ connectionString: ADMIN_URL });
+      await cleanup.connect();
+      await cleanup.query(`drop database if exists ${dbHalf} with (force)`);
+      await cleanup.end();
+    }
+  }, 30_000);
+
   it("여러 번 돌려도 데이터가 남아 있다", async () => {
     // create table if not exists 라서 기존 표를 지우지 않는다.
     const siteId = await createSite(ALICE, "다시 실행해도 남아야 함");
