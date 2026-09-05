@@ -27,7 +27,7 @@ Supabase 설정 없이도 그냥 돈다. 이때는 **로그인이 꺼진 개발 
 
 ```bash
 npm test         # 119개 — 견적 엔진, 폼 검증, 인증 가드, 사용자 격리, 견적 이력, 공유, 단가표
-npm run test:db  # 37개(+17개) — 진짜 Postgres/PostgREST에 돌려 본다 (아래 참고)
+npm run test:db  # 43개(+17개) — 진짜 Postgres/PostgREST에 돌려 본다 (아래 참고)
 npm run test:all # 둘 다
 npm run typecheck
 npm run lint
@@ -57,7 +57,9 @@ src/lib/data/       ← 저장소. 인터페이스 하나에 구현 두 개
 src/app/            ← 화면 (Next.js App Router)
 src/proxy.ts        ← 매 요청 Supabase 세션 갱신 (Next 16의 미들웨어)
 supabase/migrations ← DB 스키마 (owner_id + RLS 포함)
-supabase/setup.sql  ← 위 파일들을 합친 것 (대시보드에 붙여넣는 용도)
+supabase/setup.sql     ← 위 파일들을 합친 것 (대시보드에 붙여넣는 용도)
+supabase/reset.sql     ← 이 앱이 만든 표를 지운다 (설치가 꼬였을 때)
+supabase/reinstall.sql ← reset + setup. 어떤 상태에서든 한 번에 설치된다
 supabase/test/      ← 진짜 Postgres/PostgREST에 돌려 보는 테스트
 ```
 
@@ -260,9 +262,9 @@ SQL은 타입 검사도 린트도 안 걸린다. RLS 정책 한 줄이 틀리면
 방법이 없다.
 
 ```bash
-npm run test:db        # 37개 — SQL만
+npm run test:db        # 43개 — SQL만
 npm run db:postgrest   # PostgREST 내려받기 (한 번만)
-POSTGREST_BIN=.cache/postgrest npm run test:db   # 54개 — 저장소 코드까지
+POSTGREST_BIN=.cache/postgrest npm run test:db   # 60개 — 저장소 코드까지
 ```
 
 임시 Postgres를 띄우고 → Supabase가 기본으로 갖고 있는 것들(`anon`·
@@ -273,10 +275,13 @@ POSTGREST_BIN=.cache/postgrest npm run test:db   # 54개 — 저장소 코드까
 로컬에 Postgres 서버가 있어야 한다 (`PG_BIN`으로 경로 지정 가능, 기본
 `/usr/lib/postgresql/16/bin`). 없으면 `npm test`가 이 묶음을 건너뛴다.
 
-### 1층 — 스키마와 정책 (37개)
+### 1층 — 스키마와 정책 (42개)
 
 - **몇 번을 실행해도 괜찮다** — `setup.sql`을 세 번 돌려도 오류가 없고,
-  정책이 늘어나지 않고, 저장된 데이터가 남는다
+  정책이 늘어나지 않고, 저장된 데이터가 남는다. 절반만 설치된 상태에서
+  다시 실행해도 복구된다
+- **처음부터 다시** — `reinstall.sql`은 빈 상태·절반 설치·완전 설치
+  어디서 실행해도 같은 결과가 되고, 로그인 계정은 지우지 않는다
 - **사용자 격리** — 남의 현장·견적·단가표가 안 보이고, 남의 id로 등록도 안 된다
 - **견적 스냅샷 불변** — 저장된 `result`·`total`·`label`은 수정이 거부되고
   `share_token`만 고칠 수 있다 (RLS는 행 단위라 컬럼을 못 가린다. 컬럼 권한으로 막았다)
@@ -333,6 +338,13 @@ New query 에 붙여넣고 **Run**.
 **몇 번을 실행해도 안전하다.** 중간에 끊겼거나 실수로 두 번 눌렀으면 그냥
 다시 붙여넣고 Run 하면 된다. 이미 만들어진 것은 건너뛰고, **저장된 데이터도
 지워지지 않는다.**
+
+**오류가 계속 나면** `supabase/reinstall.sql` 을 대신 붙여넣는다. 이 앱이
+만든 표를 싹 지우고 처음부터 다시 설치하는 파일이라, 설치가 어디까지
+됐든 상관없이 한 번에 끝난다.
+
+> ⚠️ 저장된 현장·견적·단가표가 사라진다. 로그인 계정은 남는다.
+> 아직 실제로 쓰기 전이라면 이게 제일 빠르다.
 
 한 번에 안 되면 `supabase/migrations/`의 파일을 `0001` → `0002` → `0003` →
 `0004` 순서로 하나씩 실행해도 된다. 결과는 같다.

@@ -22,6 +22,9 @@ const BOB = "22222222-2222-2222-2222-222222222222";
 
 const MIGRATIONS_DIR = path.join(process.cwd(), "supabase/migrations");
 const PREAMBLE = path.join(process.cwd(), "supabase/test/preamble.sql");
+const SETUP = path.join(process.cwd(), "supabase/setup.sql");
+const RESET = path.join(process.cwd(), "supabase/reset.sql");
+const REINSTALL = path.join(process.cwd(), "supabase/reinstall.sql");
 
 let pool: Pool;
 let dbName: string;
@@ -260,6 +263,129 @@ describeDb("몇 번을 실행해도 괜찮다", () => {
     // 뒤 테스트가 "앨리스 현장이 하나뿐"을 확인하므로 치운다.
     await pool.query("delete from public.sites where id = $1", [siteId]);
   });
+});
+
+describeDb("처음부터 다시 (reset.sql)", () => {
+  /** 빈 데이터베이스를 하나 만들어 주고, 끝나면 지운다. */
+  async function withFreshDb(run: (client: Client) => Promise<void>) {
+    const name = `dobae_reset_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+
+    const admin = new Client({ connectionString: ADMIN_URL });
+    await admin.connect();
+    await admin.query(`create database ${name}`);
+    await admin.end();
+
+    const url = new URL(ADMIN_URL!);
+    url.pathname = `/${name}`;
+    const client = new Client({ connectionString: url.toString() });
+    await client.connect();
+
+    try {
+      await client.query(await readFile(PREAMBLE, "utf8"));
+      await run(client);
+    } finally {
+      await client.end();
+      const cleanup = new Client({ connectionString: ADMIN_URL });
+      await cleanup.connect();
+      await cleanup.query(`drop database if exists ${name} with (force)`);
+      await cleanup.end();
+    }
+  }
+
+  const tablesOf = async (client: Client) =>
+    (
+      await client.query(
+        `select table_name from information_schema.tables
+         where table_schema = 'public' order by table_name`,
+      )
+    ).rows.map((r) => r.table_name as string);
+
+  it("아무것도 없는 상태에서 실행해도 오류가 안 난다", async () => {
+    // 설치가 어디까지 됐는지 모르는 채로 붙여넣게 되므로,
+    // 지울 게 없어도 조용히 넘어가야 한다.
+    await withFreshDb(async (client) => {
+      const reset = await readFile(RESET, "utf8");
+      await expect(client.query(reset)).resolves.toBeDefined();
+      await expect(client.query(reset)).resolves.toBeDefined();
+    });
+  }, 30_000);
+
+  it("설치 → 초기화 → 재설치가 된다", async () => {
+    await withFreshDb(async (client) => {
+      const setup = await readFile(SETUP, "utf8");
+      const reset = await readFile(RESET, "utf8");
+
+      await client.query(setup);
+      expect(await tablesOf(client)).toEqual(["estimates", "settings", "sites"]);
+
+      await client.query(reset);
+      expect(await tablesOf(client)).toEqual([]);
+
+      await client.query(setup);
+      expect(await tablesOf(client)).toEqual(["estimates", "settings", "sites"]);
+    });
+  }, 30_000);
+
+  it("절반만 설치된 상태도 정리한다", async () => {
+    // 실제로 막힌 자리. 타입만 만들어져 42710으로 멈춘 상태.
+    await withFreshDb(async (client) => {
+      await client.query(`
+        create type site_status as enum
+          ('inquiry','quoted','confirmed','in_progress','done');
+        create type wallpaper_kind as enum ('silk','wide','narrow');
+      `);
+
+      await client.query(await readFile(RESET, "utf8"));
+      await client.query(await readFile(SETUP, "utf8"));
+
+      expect(await tablesOf(client)).toEqual(["estimates", "settings", "sites"]);
+    });
+  }, 30_000);
+
+  it("reinstall.sql 하나로 어떤 상태에서든 설치된다", async () => {
+    // 붙여넣기 한 번으로 끝나야 한다. 순서를 지켜 두 번 실행하게 하면
+    // 그 사이에서 또 헷갈린다.
+    const reinstall = await readFile(REINSTALL, "utf8");
+
+    // (1) 아무것도 없는 상태
+    await withFreshDb(async (client) => {
+      await expect(client.query(reinstall)).resolves.toBeDefined();
+      expect(await tablesOf(client)).toEqual(["estimates", "settings", "sites"]);
+    });
+
+    // (2) 절반만 설치된 상태
+    await withFreshDb(async (client) => {
+      await client.query(`
+        create type site_status as enum
+          ('inquiry','quoted','confirmed','in_progress','done');
+      `);
+      await expect(client.query(reinstall)).resolves.toBeDefined();
+      expect(await tablesOf(client)).toEqual(["estimates", "settings", "sites"]);
+    });
+
+    // (3) 이미 다 설치된 상태에서 또 실행
+    await withFreshDb(async (client) => {
+      await client.query(reinstall);
+      await expect(client.query(reinstall)).resolves.toBeDefined();
+      expect(await tablesOf(client)).toEqual(["estimates", "settings", "sites"]);
+    });
+  }, 60_000);
+
+  it("로그인 계정은 지우지 않는다", async () => {
+    // 표를 다시 만드는 것과 계정을 날리는 것은 전혀 다른 얘기다.
+    await withFreshDb(async (client) => {
+      await client.query(
+        `insert into auth.users (id, email) values ($1, 'keep@test')`,
+        [ALICE],
+      );
+
+      await client.query(await readFile(SETUP, "utf8"));
+      await client.query(await readFile(RESET, "utf8"));
+
+      const { rows } = await client.query("select email from auth.users");
+      expect(rows.map((r) => r.email)).toEqual(["keep@test"]);
+    });
+  }, 30_000);
 });
 
 describeDb("현장 — 사용자 격리", () => {
