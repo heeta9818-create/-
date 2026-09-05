@@ -14,20 +14,34 @@
 --
 -- 처음부터 owner_id + RLS로 잡아둔다. 나중에 직원 계정이 늘어나도
 -- 테이블을 갈아엎지 않고 정책만 확장하면 되기 때문이다.
+--
+-- 몇 번을 실행해도 괜찮게 써 둔다. 대시보드에 붙여넣다가 중간에 끊기거나
+-- 실수로 두 번 눌렀을 때 "이미 있습니다" 오류로 막히면, 어디까지 됐는지
+-- 알 수 없어 손을 못 댄다. 그냥 다시 실행하면 되는 편이 낫다.
 
-create type site_status as enum (
-  'inquiry',      -- 문의
-  'quoted',       -- 견적발송
-  'confirmed',    -- 계약확정
-  'in_progress',  -- 시공중
-  'done'          -- 완료
-);
+do $$
+begin
+  if not exists (select 1 from pg_type where typname = 'site_status') then
+    create type site_status as enum (
+      'inquiry',      -- 문의
+      'quoted',       -- 견적발송
+      'confirmed',    -- 계약확정
+      'in_progress',  -- 시공중
+      'done'          -- 완료
+    );
+  end if;
 
-create type area_basis as enum ('supply', 'exclusive');
+  if not exists (select 1 from pg_type where typname = 'area_basis') then
+    create type area_basis as enum ('supply', 'exclusive');
+  end if;
 
-create type wallpaper_kind as enum ('silk', 'wide', 'narrow');
+  if not exists (select 1 from pg_type where typname = 'wallpaper_kind') then
+    create type wallpaper_kind as enum ('silk', 'wide', 'narrow');
+  end if;
+end
+$$;
 
-create table public.sites (
+create table if not exists public.sites (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null references auth.users (id) on delete cascade,
   created_at timestamptz not null default now(),
@@ -49,8 +63,8 @@ create table public.sites (
   estimate_total integer not null default 0 check (estimate_total >= 0)
 );
 
-create index sites_owner_created_idx on public.sites (owner_id, created_at desc);
-create index sites_owner_scheduled_idx on public.sites (owner_id, scheduled_on);
+create index if not exists sites_owner_created_idx on public.sites (owner_id, created_at desc);
+create index if not exists sites_owner_scheduled_idx on public.sites (owner_id, scheduled_on);
 
 create or replace function public.touch_updated_at()
 returns trigger
@@ -62,6 +76,7 @@ begin
 end;
 $$;
 
+drop trigger if exists sites_touch_updated_at on public.sites;
 create trigger sites_touch_updated_at
   before update on public.sites
   for each row execute function public.touch_updated_at();
@@ -69,15 +84,19 @@ create trigger sites_touch_updated_at
 -- 본인 현장만 보이고 본인 현장만 고칠 수 있다.
 alter table public.sites enable row level security;
 
+drop policy if exists "본인 현장 조회" on public.sites;
 create policy "본인 현장 조회" on public.sites
   for select using (auth.uid() = owner_id);
 
+drop policy if exists "본인 현장 등록" on public.sites;
 create policy "본인 현장 등록" on public.sites
   for insert with check (auth.uid() = owner_id);
 
+drop policy if exists "본인 현장 수정" on public.sites;
 create policy "본인 현장 수정" on public.sites
   for update using (auth.uid() = owner_id) with check (auth.uid() = owner_id);
 
+drop policy if exists "본인 현장 삭제" on public.sites;
 create policy "본인 현장 삭제" on public.sites
   for delete using (auth.uid() = owner_id);
 
@@ -96,9 +115,9 @@ create policy "본인 현장 삭제" on public.sites
 -- 재사용된다 — 이미 보낸 "2차 견적"이 나중에 다른 견적을 가리키게 된다.
 -- 현장마다 마지막 번호를 들고 있으면 삭제와 무관하게 계속 올라간다.
 alter table public.sites
-  add column last_estimate_version integer not null default 0;
+  add column if not exists last_estimate_version integer not null default 0;
 
-create table public.estimates (
+create table if not exists public.estimates (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null references auth.users (id) on delete cascade,
   site_id uuid not null references public.sites (id) on delete cascade,
@@ -117,17 +136,20 @@ create table public.estimates (
   unique (site_id, version)
 );
 
-create index estimates_site_version_idx
+create index if not exists estimates_site_version_idx
   on public.estimates (site_id, version desc);
 
 alter table public.estimates enable row level security;
 
+drop policy if exists "본인 견적 조회" on public.estimates;
 create policy "본인 견적 조회" on public.estimates
   for select using (auth.uid() = owner_id);
 
+drop policy if exists "본인 견적 등록" on public.estimates;
 create policy "본인 견적 등록" on public.estimates
   for insert with check (auth.uid() = owner_id);
 
+drop policy if exists "본인 견적 삭제" on public.estimates;
 create policy "본인 견적 삭제" on public.estimates
   for delete using (auth.uid() = owner_id);
 
@@ -199,7 +221,7 @@ create schema if not exists extensions;
 create extension if not exists pgcrypto with schema extensions;
 
 alter table public.estimates
-  add column share_token text unique
+  add column if not exists share_token text unique
     check (share_token is null or length(share_token) >= 32);
 
 comment on column public.estimates.share_token is
@@ -294,6 +316,7 @@ $$;
 
 -- 공개 링크를 켜고 끄려면 update가 필요하다. 0002에서는 견적을 고치지
 -- 않는다는 전제로 update 정책을 아예 만들지 않았는데, share_token만은 예외다.
+drop policy if exists "본인 견적 공유 설정" on public.estimates;
 create policy "본인 견적 공유 설정" on public.estimates
   for update using (auth.uid() = owner_id) with check (auth.uid() = owner_id);
 
@@ -316,23 +339,27 @@ grant update (share_token) on public.estimates to authenticated;
 -- (벽지 종류 추가, 계수 추가) 그때마다 마이그레이션을 붙이는 것보다
 -- 앱에서 기본값으로 채우는 편이 낫다. 이 값으로 검색하거나 집계할 일도 없다.
 
-create table public.settings (
+create table if not exists public.settings (
   owner_id uuid primary key references auth.users (id) on delete cascade,
   data jsonb not null default '{}'::jsonb,
   updated_at timestamptz not null default now()
 );
 
+drop trigger if exists settings_touch_updated_at on public.settings;
 create trigger settings_touch_updated_at
   before update on public.settings
   for each row execute function public.touch_updated_at();
 
 alter table public.settings enable row level security;
 
+drop policy if exists "본인 단가표 조회" on public.settings;
 create policy "본인 단가표 조회" on public.settings
   for select using (auth.uid() = owner_id);
 
+drop policy if exists "본인 단가표 등록" on public.settings;
 create policy "본인 단가표 등록" on public.settings
   for insert with check (auth.uid() = owner_id);
 
+drop policy if exists "본인 단가표 수정" on public.settings;
 create policy "본인 단가표 수정" on public.settings
   for update using (auth.uid() = owner_id) with check (auth.uid() = owner_id);

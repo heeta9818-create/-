@@ -9,9 +9,9 @@
 -- 재사용된다 — 이미 보낸 "2차 견적"이 나중에 다른 견적을 가리키게 된다.
 -- 현장마다 마지막 번호를 들고 있으면 삭제와 무관하게 계속 올라간다.
 alter table public.sites
-  add column last_estimate_version integer not null default 0;
+  add column if not exists last_estimate_version integer not null default 0;
 
-create table public.estimates (
+create table if not exists public.estimates (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null references auth.users (id) on delete cascade,
   site_id uuid not null references public.sites (id) on delete cascade,
@@ -30,17 +30,20 @@ create table public.estimates (
   unique (site_id, version)
 );
 
-create index estimates_site_version_idx
+create index if not exists estimates_site_version_idx
   on public.estimates (site_id, version desc);
 
 alter table public.estimates enable row level security;
 
+drop policy if exists "본인 견적 조회" on public.estimates;
 create policy "본인 견적 조회" on public.estimates
   for select using (auth.uid() = owner_id);
 
+drop policy if exists "본인 견적 등록" on public.estimates;
 create policy "본인 견적 등록" on public.estimates
   for insert with check (auth.uid() = owner_id);
 
+drop policy if exists "본인 견적 삭제" on public.estimates;
 create policy "본인 견적 삭제" on public.estimates
   for delete using (auth.uid() = owner_id);
 

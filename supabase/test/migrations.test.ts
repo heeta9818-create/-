@@ -107,6 +107,11 @@ beforeAll(async () => {
   url.pathname = `/${dbName}`;
   pool = new Pool({ connectionString: url.toString() });
 
+  // 마지막에 임시 DB를 강제로 지우면, 놀고 있던 연결이 끊기면서 오류를
+  // 던진다. 받아 주는 곳이 없으면 vitest가 "unhandled error"로 올린다.
+  // 테스트 결과와 무관한 소리라 여기서 삼킨다.
+  pool.on("error", () => {});
+
   const setup = new Client({ connectionString: url.toString() });
   await setup.connect();
   await setup.query(await readFile(PREAMBLE, "utf8"));
@@ -154,6 +159,55 @@ describeDb("마이그레이션이 적용된다", () => {
     for (const row of rows) {
       expect(row.relrowsecurity, row.relname).toBe(true);
     }
+  });
+});
+
+describeDb("몇 번을 실행해도 괜찮다", () => {
+  it("setup.sql 을 세 번 돌려도 오류가 안 난다", async () => {
+    // 대시보드에 붙여넣다가 중간에 끊기거나 실수로 두 번 누르는 일은 흔하다.
+    // "이미 있습니다"로 막히면 어디까지 됐는지 알 수 없어 손을 못 댄다.
+    const setup = await readFile(
+      path.join(process.cwd(), "supabase/setup.sql"),
+      "utf8",
+    );
+
+    for (let round = 0; round < 3; round += 1) {
+      await expect(
+        pool.query(setup),
+        `${round + 2}번째 실행`,
+      ).resolves.toBeDefined();
+    }
+  });
+
+  it("여러 번 돌려도 정책이 늘어나지 않는다", async () => {
+    const { rows } = await pool.query(
+      `select tablename, count(*)::int as n from pg_policies
+       where schemaname = 'public' group by tablename order by tablename`,
+    );
+
+    expect(Object.fromEntries(rows.map((r) => [r.tablename, r.n]))).toEqual({
+      estimates: 4, // 조회·등록·삭제 + 공유 설정
+      settings: 3, // 조회·등록·수정
+      sites: 4, // 조회·등록·수정·삭제
+    });
+  });
+
+  it("여러 번 돌려도 데이터가 남아 있다", async () => {
+    // create table if not exists 라서 기존 표를 지우지 않는다.
+    const siteId = await createSite(ALICE, "다시 실행해도 남아야 함");
+
+    await pool.query(
+      await readFile(path.join(process.cwd(), "supabase/setup.sql"), "utf8"),
+    );
+
+    const { rows } = await pool.query(
+      "select customer_name from public.sites where id = $1",
+      [siteId],
+    );
+    expect(rows[0]?.customer_name).toBe("다시 실행해도 남아야 함");
+
+    // 뒤 테스트가 "앨리스 현장이 하나뿐"을 확인하므로 치운다.
+    await pool.query("delete from public.sites where id = $1", [siteId]);
   });
 });
 

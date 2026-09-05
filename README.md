@@ -27,7 +27,7 @@ Supabase 설정 없이도 그냥 돈다. 이때는 **로그인이 꺼진 개발 
 
 ```bash
 npm test         # 119개 — 견적 엔진, 폼 검증, 인증 가드, 사용자 격리, 견적 이력, 공유, 단가표
-npm run test:db  # 34개(+17개) — 진짜 Postgres/PostgREST에 돌려 본다 (아래 참고)
+npm run test:db  # 37개(+17개) — 진짜 Postgres/PostgREST에 돌려 본다 (아래 참고)
 npm run test:all # 둘 다
 npm run typecheck
 npm run lint
@@ -260,9 +260,9 @@ SQL은 타입 검사도 린트도 안 걸린다. RLS 정책 한 줄이 틀리면
 방법이 없다.
 
 ```bash
-npm run test:db        # 34개 — SQL만
+npm run test:db        # 37개 — SQL만
 npm run db:postgrest   # PostgREST 내려받기 (한 번만)
-POSTGREST_BIN=.cache/postgrest npm run test:db   # 51개 — 저장소 코드까지
+POSTGREST_BIN=.cache/postgrest npm run test:db   # 54개 — 저장소 코드까지
 ```
 
 임시 Postgres를 띄우고 → Supabase가 기본으로 갖고 있는 것들(`anon`·
@@ -273,8 +273,10 @@ POSTGREST_BIN=.cache/postgrest npm run test:db   # 51개 — 저장소 코드까
 로컬에 Postgres 서버가 있어야 한다 (`PG_BIN`으로 경로 지정 가능, 기본
 `/usr/lib/postgresql/16/bin`). 없으면 `npm test`가 이 묶음을 건너뛴다.
 
-### 1층 — 스키마와 정책 (34개)
+### 1층 — 스키마와 정책 (37개)
 
+- **몇 번을 실행해도 괜찮다** — `setup.sql`을 세 번 돌려도 오류가 없고,
+  정책이 늘어나지 않고, 저장된 데이터가 남는다
 - **사용자 격리** — 남의 현장·견적·단가표가 안 보이고, 남의 id로 등록도 안 된다
 - **견적 스냅샷 불변** — 저장된 `result`·`total`·`label`은 수정이 거부되고
   `share_token`만 고칠 수 있다 (RLS는 행 단위라 컬럼을 못 가린다. 컬럼 권한으로 막았다)
@@ -318,8 +320,18 @@ PostgREST는 Supabase가 `/rest/v1` 뒤에 얹어 두는 HTTP 창구다. 이걸 
 
 ### 2. 표와 규칙 만들기
 
-대시보드 왼쪽 **SQL Editor** → New query → `supabase/setup.sql` **전체**를
-복사해 붙여넣고 **Run**.
+`supabase/setup.sql` **전체**를 복사해서, 대시보드 왼쪽 **SQL Editor** →
+New query 에 붙여넣고 **Run**.
+
+> **복사는 GitHub에서 파일을 열고 오른쪽 위 복사 아이콘(⧉)을 누르는 게 제일
+> 정확하다.** 화면에 보이는 걸 드래그하면 줄 번호가 섞여 들어가 오류가 난다.
+
+**몇 번을 실행해도 안전하다.** 중간에 끊겼거나 실수로 두 번 눌렀으면 그냥
+다시 붙여넣고 Run 하면 된다. 이미 만들어진 것은 건너뛰고, **저장된 데이터도
+지워지지 않는다.**
+
+한 번에 안 되면 `supabase/migrations/`의 파일을 `0001` → `0002` → `0003` →
+`0004` 순서로 하나씩 실행해도 된다. 결과는 같다.
 
 이 파일은 `supabase/migrations/`를 순서대로 합친 것이다. 직접 고치지 말고,
 마이그레이션을 고친 뒤 `npm run db:bundle`로 다시 만든다 (어긋나면 테스트가
@@ -370,6 +382,8 @@ npm run dev
 
 - **메일 인증** — 가입하면 확인 메일이 간다. 링크를 눌러야 로그인된다.
   혼자 쓸 거면 Authentication → Sign In / Providers에서 "Confirm email"을 꺼도 된다
+- **SQL이 오류를 낸다** — 빨간 글씨를 그대로 읽으면 대개 답이 있다.
+  `already exists`가 보이면 이미 만들어진 것이니 그냥 넘어가면 된다
 - **프로젝트 일시정지** — 무료 플랜은 일주일 안 쓰면 멈춘다. 대시보드에서 깨우면 된다
 - **`.env.local`은 커밋하지 않는다** — `.gitignore`에 이미 들어 있다
 

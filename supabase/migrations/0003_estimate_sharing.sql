@@ -11,7 +11,7 @@ create schema if not exists extensions;
 create extension if not exists pgcrypto with schema extensions;
 
 alter table public.estimates
-  add column share_token text unique
+  add column if not exists share_token text unique
     check (share_token is null or length(share_token) >= 32);
 
 comment on column public.estimates.share_token is
@@ -106,6 +106,7 @@ $$;
 
 -- 공개 링크를 켜고 끄려면 update가 필요하다. 0002에서는 견적을 고치지
 -- 않는다는 전제로 update 정책을 아예 만들지 않았는데, share_token만은 예외다.
+drop policy if exists "본인 견적 공유 설정" on public.estimates;
 create policy "본인 견적 공유 설정" on public.estimates
   for update using (auth.uid() = owner_id) with check (auth.uid() = owner_id);
 
