@@ -70,7 +70,11 @@ export default function QuoteSheet({ pro, shop, quote, summary, issuedAt, onClos
                   <tr key={room.id}>
                     <td>
                       {room.name || "이름 없음"}
-                      {room.ceiling ? " (천장 포함)" : ""}
+                      {room.walls === false
+                        ? " (천장만)"
+                        : room.ceiling
+                          ? " (천장 포함)"
+                          : " (벽만)"}
                     </td>
                     <td className="n">
                       {m.w} × {m.d} × {m.h}

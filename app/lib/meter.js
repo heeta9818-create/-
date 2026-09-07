@@ -249,7 +249,7 @@ export async function connectMeter({ onDistance, onStatus, onFound, onDisconnect
 /* ── 칸 순서 ───────────────────────────────── */
 
 export function nextField(room, field) {
-  const order = ["w", "d", "h"];
+  const order = room.walls === false ? [] : ["w", "d", "h"];
   if (room.ceiling) order.push("cw", "cd");
   const at = order.indexOf(field);
   if (at < 0 || at === order.length - 1) return null;

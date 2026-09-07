@@ -62,14 +62,25 @@ function parseLine(line, index) {
 
   const text = line.replace(/\s+/g, "");
   const paper = /합지/.test(text) ? "hapji" : "silk";
-  // 천장은 기본으로 포함한다. 빼라고 적혀 있을 때만 끈다.
-  const ceilingOff = /천장(제외|뺌|빼고|없음|안함|X|x|엑스)|벽만|벽지만|벽면만/.test(text);
-  const ceiling = !ceilingOff;
+
+  // 현장에서 천장을 "천"으로 줄여 적는다. 둘 다 같은 말로 본다.
+  // 천장은 기본으로 포함하고, 빼라고 적혀 있을 때만 끈다.
+  const ceilingOff =
+    /(천장|천)(제외|뺌|빼고|없음|안함|무|X|x|엑스)|벽만|벽지만|벽면만|무천|노천/.test(text);
+
+  // "천장만", "천만" 은 벽 없이 천장만 하는 것
+  const ceilingOnly = /(천장|천)(만|도배만)/.test(text);
+
+  const ceiling = ceilingOnly || !ceilingOff;
+  const walls = !ceilingOnly;
 
   // 이름에서 옵션 단어는 빼고 남은 것만 쓴다
   const name =
     words
-      .filter((w) => !/^(천장.*|벽만|벽지만|벽면만|실크.*|합지.*|벽지|포함|제외|시공)$/.test(w))
+      .filter(
+        (w) =>
+          !/^(천장.*|천|천\S{0,3}|벽만|벽지만|벽면만|무천|노천|실크.*|합지.*|벽지|포함|제외|시공)$/.test(w)
+      )
       .join(" ")
       .trim() || "방 " + (index + 1);
 
@@ -81,6 +92,7 @@ function parseLine(line, index) {
     cw: dims.length > 3 ? tidy(dims[3]) : "",
     cd: dims.length > 4 ? tidy(dims[4]) : "",
     ceiling,
+    walls,
     paper,
   };
 

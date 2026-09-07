@@ -51,8 +51,9 @@ export function measureRoom(room) {
   const cw = num(room.cw) || w;
   const cd = num(room.cd) || d;
 
-  const wall = splitRun(perimeter, h + MARGIN, paper);
-  const ceiling = room.ceiling ? splitRun(cw, cd + MARGIN, paper) : { strips: 0, perRoll: 0, remainder: 0 };
+  const none = { strips: 0, perRoll: 0, remainder: 0 };
+  const wall = room.walls === false ? none : splitRun(perimeter, h + MARGIN, paper);
+  const ceiling = room.ceiling ? splitRun(cw, cd + MARGIN, paper) : none;
 
   // 롤은 방마다 올림하지 않는다. 남은 자투리는 다음 방에서 쓰므로
   // 소수로 쌓아뒀다가 현장 전체에서 한 번만 올린다.

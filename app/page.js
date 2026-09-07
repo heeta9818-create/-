@@ -132,11 +132,14 @@ export default function Home() {
     summary.rooms
       .filter((r) => r.m.strips > 0)
       .forEach(({ room, m }) => {
-        const ceilNote = room.ceiling
-          ? m.cw !== m.w || m.cd !== m.d
-            ? " (천장 " + m.cw + "×" + m.cd + ")"
-            : " (천장 포함)"
-          : "";
+        const ceilNote =
+          room.walls === false
+            ? " (천장만)"
+            : room.ceiling
+              ? m.cw !== m.w || m.cd !== m.d
+                ? " (천장 " + m.cw + "×" + m.cd + ")"
+                : " (천장 포함)"
+              : " (벽만)";
         lines.push(
           "· " + (room.name || "방") + " " + m.w + "×" + m.d + "×" + m.h +
           " / " + m.pyeong.toFixed(1) + "평" + ceilNote
@@ -433,7 +436,13 @@ export default function Home() {
                       {memoPreview.map((r, i) => (
                         <span className="memo-line" key={i}>
                           <b>{r.name}</b> {r.w}×{r.d || "?"}×{r.h}
-                          {r.ceiling ? (r.cw ? " · 천장 " + r.cw + "×" + r.cd : " · 천장 포함") : " · 벽만"}
+                          {r.walls === false
+                            ? " · 천장만"
+                            : r.ceiling
+                              ? r.cw
+                                ? " · 천장 " + r.cw + "×" + r.cd
+                                : " · 천장 포함"
+                              : " · 벽만"}
                           {r.paper === "hapji" ? " · 합지" : ""}
                         </span>
                       ))}
@@ -541,10 +550,17 @@ export default function Home() {
                   <span className="chip-gap" />
                   <button
                     type="button" className="chip"
+                    aria-pressed={room.walls !== false}
+                    onClick={() => patchRoom(room.id, { walls: room.walls === false })}
+                  >
+                    벽
+                  </button>
+                  <button
+                    type="button" className="chip"
                     aria-pressed={!!room.ceiling}
                     onClick={() => patchRoom(room.id, { ceiling: !room.ceiling })}
                   >
-                    천장 포함
+                    천장
                   </button>
                 </div>
 
@@ -573,7 +589,9 @@ export default function Home() {
                 {bt ? (
                   <div className="aim-row">
                     <span className="sub-lead">조준</span>
-                    {["w", "d", "h"].concat(room.ceiling ? ["cw", "cd"] : []).map((f) => (
+                    {(room.walls === false ? [] : ["w", "d", "h"])
+                      .concat(room.ceiling ? ["cw", "cd"] : [])
+                      .map((f) => (
                       <button
                         key={f} type="button" className="chip"
                         aria-pressed={!!aim && aim.roomId === room.id && aim.field === f}
@@ -590,9 +608,13 @@ export default function Home() {
                     <>
                       <span>바닥 {m.pyeong.toFixed(1)}평</span>
                       <span>둘레 {m.perimeter.toFixed(1)}m</span>
-                      <span>
-                        벽 <b>{m.wall.strips}폭</b>
-                      </span>
+                      {m.wall.strips > 0 ? (
+                        <span>
+                          벽 <b>{m.wall.strips}폭</b>
+                        </span>
+                      ) : (
+                        <span className="none">벽 제외</span>
+                      )}
                       {m.ceiling.strips > 0 ? (
                         <span>
                           천장 {m.cw}×{m.cd} <b>{m.ceiling.strips}폭</b>

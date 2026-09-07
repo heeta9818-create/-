@@ -16,6 +16,7 @@ export function emptyRoom(index) {
     cw: "",
     cd: "",
     ceiling: true,
+    walls: true,
     paper: "silk",
   };
 }
