@@ -2,9 +2,10 @@
 
 import { useEffect } from "react";
 import { won } from "../lib/calc";
+import { FREE_MARK } from "../lib/plan";
 import { formatDate, quoteNo } from "../lib/store";
 
-export default function QuoteSheet({ shop, quote, summary, issuedAt, onClose, onShare, onPrint }) {
+export default function QuoteSheet({ pro, shop, quote, summary, issuedAt, onClose, onShare, onPrint }) {
   // 인쇄할 때 앱 화면은 빼고 이 종이만 나가게 표시해 둔다
   useEffect(() => {
     document.body.classList.add("sheet-open");
@@ -73,6 +74,12 @@ export default function QuoteSheet({ shop, quote, summary, issuedAt, onClose, on
                     </td>
                     <td className="n">
                       {m.w} × {m.d} × {m.h}
+                      {room.ceiling && (m.cw !== m.w || m.cd !== m.d) ? (
+                        <>
+                          <br />
+                          <small>천장 {m.cw} × {m.cd}</small>
+                        </>
+                      ) : null}
                     </td>
                     <td className="n">{m.pyeong.toFixed(1)}평</td>
                     <td className="n">{m.paper.label}</td>
@@ -175,6 +182,8 @@ export default function QuoteSheet({ shop, quote, summary, issuedAt, onClose, on
           확인 후 조정될 수 있습니다.
           {quote.vat ? " 금액은 부가세 포함가입니다." : " 금액은 부가세 별도입니다."}
         </p>
+
+        {pro ? null : <div className="sheet-mark">{FREE_MARK}</div>}
       </div>
 
       <div className="sheet-actions no-print">

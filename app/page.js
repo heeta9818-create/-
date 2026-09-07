@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import QuoteSheet from "./components/QuoteSheet";
+import { FREE_SAVE_LIMIT, isPro } from "./lib/plan";
 import { PAPERS, PAPER_KEYS, summarize, won } from "./lib/calc";
 import { blankQuote, defaultData, emptyRoom, formatDate, load, newId, save } from "./lib/store";
 
@@ -33,6 +35,8 @@ export default function Home() {
 
   const { shop, quote, history } = data;
   const summary = summarize(quote);
+  const pro = isPro(data);
+  const saveFull = !pro && history.length >= FREE_SAVE_LIMIT;
 
   /* ── 상태 바꾸기 ─────────────────────────── */
 
@@ -56,6 +60,10 @@ export default function Home() {
   /* ── 견적 보관 ───────────────────────────── */
 
   function saveQuote() {
+    if (saveFull) {
+      say("무료판은 " + FREE_SAVE_LIMIT + "건까지 저장됩니다");
+      return;
+    }
     const entry = {
       id: newId(),
       savedAt: new Date().toISOString(),
@@ -95,9 +103,14 @@ export default function Home() {
     summary.rooms
       .filter((r) => r.m.strips > 0)
       .forEach(({ room, m }) => {
+        const ceilNote = room.ceiling
+          ? m.cw !== m.w || m.cd !== m.d
+            ? " (천장 " + m.cw + "×" + m.cd + ")"
+            : " (천장 포함)"
+          : "";
         lines.push(
           "· " + (room.name || "방") + " " + m.w + "×" + m.d + "×" + m.h +
-          " / " + m.pyeong.toFixed(1) + "평" + (room.ceiling ? " (천장 포함)" : "")
+          " / " + m.pyeong.toFixed(1) + "평" + ceilNote
         );
       });
     lines.push("");
@@ -147,9 +160,14 @@ export default function Home() {
             <h1>도배 견적</h1>
             <p className="sub">방을 하나씩 넣으면 전체를 한 번에 계산합니다.</p>
           </div>
-          <button type="button" className="ghost-btn" onClick={() => setShowShop((v) => !v)}>
-            {showShop ? "닫기" : "내 상호"}
-          </button>
+          <div className="head-actions">
+            <button type="button" className="ghost-btn" onClick={() => setShowShop((v) => !v)}>
+              {showShop ? "닫기" : "내 상호"}
+            </button>
+            <Link className="ghost-btn" href="/pricing">
+              {pro ? "프로" : "요금제"}
+            </Link>
+          </div>
         </header>
 
         {showShop ? (
@@ -276,16 +294,41 @@ export default function Home() {
                   </button>
                 </div>
 
+                {room.ceiling ? (
+                  <div className="sub-grid">
+                    <span className="sub-lead">천장</span>
+                    <label className="field">
+                      <span>가로 <i>M</i></span>
+                      <input
+                        className="in num" type="number" inputMode="decimal" step="0.1" min="0"
+                        placeholder={room.w || "방과 같음"} value={room.cw || ""}
+                        onChange={(e) => patchRoom(room.id, { cw: e.target.value })}
+                      />
+                    </label>
+                    <label className="field">
+                      <span>세로 <i>M</i></span>
+                      <input
+                        className="in num" type="number" inputMode="decimal" step="0.1" min="0"
+                        placeholder={room.d || "방과 같음"} value={room.cd || ""}
+                        onChange={(e) => patchRoom(room.id, { cd: e.target.value })}
+                      />
+                    </label>
+                  </div>
+                ) : null}
+
                 <div className="room-out">
                   {m.strips > 0 ? (
                     <>
-                      <span>{m.pyeong.toFixed(1)}평</span>
+                      <span>바닥 {m.pyeong.toFixed(1)}평</span>
                       <span>둘레 {m.perimeter.toFixed(1)}m</span>
                       <span>
                         벽 <b>{m.wall.strips}폭</b>
-                        {m.ceiling.strips > 0 ? " · 천장 " : ""}
-                        {m.ceiling.strips > 0 ? <b>{m.ceiling.strips}폭</b> : null}
                       </span>
+                      {m.ceiling.strips > 0 ? (
+                        <span>
+                          천장 {m.cw}×{m.cd} <b>{m.ceiling.strips}폭</b>
+                        </span>
+                      ) : null}
                       <span>약 <b>{m.rollsExact.toFixed(1)}롤</b></span>
                     </>
                   ) : (
@@ -415,9 +458,22 @@ export default function Home() {
         <section className="card">
           <div className="card-head">
             <span className="label">지난 견적</span>
-            {history.length ? <span className="count">{history.length}건</span> : null}
+            {history.length ? (
+              <span className="count">
+                {history.length}건{pro ? "" : " / " + FREE_SAVE_LIMIT}
+              </span>
+            ) : null}
             <span className="rule" />
           </div>
+          {saveFull ? (
+            <div className="upsell">
+              <span className="txt">
+                무료판 저장이 <b>{FREE_SAVE_LIMIT}건</b>까지 찼습니다. 계속 쌓아두시려면 프로로
+                올리시거나, 아래에서 오래된 견적을 지워주세요.
+              </span>
+              <Link href="/pricing">요금제</Link>
+            </div>
+          ) : null}
           {history.length ? (
             <div className="hist">
               {history.map((h) => (
@@ -488,6 +544,7 @@ export default function Home() {
 
       {sheetAt ? (
         <QuoteSheet
+          pro={pro}
           shop={shop}
           quote={quote}
           summary={summary}

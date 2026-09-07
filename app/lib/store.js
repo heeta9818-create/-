@@ -13,6 +13,8 @@ export function emptyRoom(index) {
     w: "",
     d: "",
     h: "2.4",
+    cw: "",
+    cd: "",
     ceiling: true,
     paper: "silk",
   };
@@ -33,6 +35,7 @@ export function blankQuote() {
 
 export function defaultData() {
   return {
+    plan: "free",
     shop: { name: "", phone: "" },
     quote: blankQuote(),
     history: [],
@@ -46,6 +49,7 @@ export function load() {
     if (!raw) return base;
     const saved = JSON.parse(raw);
     return {
+      plan: saved.plan === "pro" ? "pro" : "free",
       shop: { ...base.shop, ...(saved.shop || {}) },
       quote: {
         ...base.quote,

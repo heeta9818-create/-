@@ -46,8 +46,13 @@ export function measureRoom(room) {
   const pyeong = area / PYEONG;
   const perimeter = 2 * (w + d);
 
+  // 천장은 따로 잰다. 비워두면 방 가로·세로를 그대로 쓴다
+  // (우물천장, 확장 구간처럼 바닥과 다를 때를 위해 따로 받는다)
+  const cw = num(room.cw) || w;
+  const cd = num(room.cd) || d;
+
   const wall = splitRun(perimeter, h + MARGIN, paper);
-  const ceiling = room.ceiling ? splitRun(w, d + MARGIN, paper) : { strips: 0, perRoll: 0, remainder: 0 };
+  const ceiling = room.ceiling ? splitRun(cw, cd + MARGIN, paper) : { strips: 0, perRoll: 0, remainder: 0 };
 
   // 롤은 방마다 올림하지 않는다. 남은 자투리는 다음 방에서 쓰므로
   // 소수로 쌓아뒀다가 현장 전체에서 한 번만 올린다.
@@ -56,7 +61,9 @@ export function measureRoom(room) {
     (ceiling.perRoll ? ceiling.strips / ceiling.perRoll : 0);
 
   return {
-    paper, w, d, h, area, pyeong, perimeter,
+    paper, w, d, h, cw, cd, area, pyeong, perimeter,
+    ceilArea: room.ceiling ? cw * cd : 0,
+    ceilPyeong: room.ceiling ? (cw * cd) / PYEONG : 0,
     wall, ceiling,
     strips: wall.strips + ceiling.strips,
     rollsExact,
