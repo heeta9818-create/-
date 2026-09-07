@@ -1191,3 +1191,36 @@ table.cmp .txt {
   border-radius: var(--r-sm);
   resize: vertical;
 }
+
+.pick.strong { background: var(--accent-soft); border-color: var(--accent-line); }
+.pick.strong b { color: var(--accent-ink); }
+.pick:disabled { opacity: .5; cursor: not-allowed; }
+
+.picker-busy {
+  margin: 0 0 3px;
+  padding: 9px 11px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  border-radius: var(--r-sm);
+}
+
+.picker-split {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 4px 2px 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .12em;
+  color: var(--faint);
+}
+
+.picker-split::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--hair);
+}

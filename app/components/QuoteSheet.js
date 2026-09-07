@@ -1,13 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { won } from "../lib/calc";
 import { FREE_MARK } from "../lib/plan";
 import { formatDate, quoteNo } from "../lib/store";
+import { buildPdf, canvasBytes, captureSheet, safeName, sendFile } from "../lib/sheetfile";
 
 export default function QuoteSheet({ pro, shop, quote, summary, issuedAt, text, onToast, onClose, onPrint }) {
   const [pickOpen, setPickOpen] = useState(false);
   const [why, setWhy] = useState("");
+  const [busy, setBusy] = useState("");
+  const paper = useRef(null);
   // 인쇄할 때 앱 화면은 빼고 이 종이만 나가게 표시해 둔다
   useEffect(() => {
     document.body.classList.add("sheet-open");
@@ -41,13 +44,41 @@ export default function QuoteSheet({ pro, shop, quote, summary, issuedAt, text, 
 
   // 공유 버튼을 누르면 바로 공유창부터 시도하고, 안 되면 목록을 편다
   function onShareTap() {
-    setWhy("");
-    if (canSystemShare) {
-      systemShare();
-      return;
-    }
-    setWhy("이 브라우저에는 공유창이 없습니다. 카톡·인스타는 복사해서 붙여넣으세요.");
+    setWhy(canSystemShare ? "" : "이 브라우저에는 공유창이 없습니다. 복사해서 붙여넣으세요.");
     setPickOpen(true);
+  }
+
+  // 견적서를 그대로 찍어서 PDF나 사진으로 보낸다
+  async function sendAs(kind) {
+    if (busy) return;
+    setWhy("");
+    setBusy(kind === "pdf" ? "PDF를 만드는 중…" : "사진을 만드는 중…");
+    try {
+      const canvas = await captureSheet(paper.current);
+      const stamp = quoteNo(issuedAt).replace("-", "_");
+      const who = safeName(quote.customer.name || quote.customer.site) || "견적";
+      let done;
+
+      if (kind === "pdf") {
+        const jpeg = await canvasBytes(canvas, "image/jpeg", 0.92);
+        const pdf = buildPdf(jpeg, canvas.width, canvas.height);
+        done = await sendFile(pdf, "견적서_" + who + "_" + stamp + ".pdf", "application/pdf", title);
+      } else {
+        const png = await canvasBytes(canvas, "image/png");
+        done = await sendFile(png, "견적서_" + who + "_" + stamp + ".png", "image/png", title);
+      }
+
+      if (done === "shared") setPickOpen(false);
+      else if (done === "downloaded") {
+        onToast("파일로 내려받았습니다");
+        setPickOpen(false);
+      }
+    } catch (e) {
+      setWhy("파일을 만들지 못했습니다. 아래 '내용 복사하기'를 써 주세요.");
+      setPickOpen(true);
+    } finally {
+      setBusy("");
+    }
   }
 
   function smsShare() {
@@ -96,7 +127,7 @@ export default function QuoteSheet({ pro, shop, quote, summary, issuedAt, text, 
 
   return (
     <div className="scrim" role="dialog" aria-modal="true" aria-label="견적서">
-      <div className="sheet">
+      <div className="sheet" ref={paper}>
         <div className="sheet-top">
           <h2 className="sheet-title">견 적 서</h2>
           <div className="sheet-shop">
@@ -265,6 +296,19 @@ export default function QuoteSheet({ pro, shop, quote, summary, issuedAt, text, 
       {pickOpen ? (
         <div className="picker no-print">
           {why ? <p className="picker-why">{why}</p> : null}
+          {busy ? <p className="picker-busy">{busy}</p> : null}
+
+          <button type="button" className="pick strong" disabled={!!busy} onClick={() => sendAs("pdf")}>
+            <b>PDF로 보내기</b>
+            <span>견적서 그대로 · 문서 파일로 전달</span>
+          </button>
+          <button type="button" className="pick strong" disabled={!!busy} onClick={() => sendAs("image")}>
+            <b>사진으로 보내기</b>
+            <span>카톡에서 바로 펼쳐 보입니다</span>
+          </button>
+
+          <div className="picker-split">글자로 보내기</div>
+
           {canSystemShare ? (
             <button type="button" className="pick" onClick={systemShare}>
               <b>휴대폰 공유창 열기</b>
