@@ -1,364 +1,504 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
-const PAPERS = {
-  silk: { label: "실크벽지", w: 1.06, len: 15.6, roll: 25000, labor: 25000 },
-  hapji: { label: "합지벽지", w: 0.93, len: 17.5, roll: 12000, labor: 15000 },
-};
-
-const PYEONG = 3.305785;
-const MARGIN = 0.1; // 폭당 재단 여유 (m)
-const MAX_DRAW = 90; // 화면에 그리는 폭 수 상한
-const STORE_KEY = "dobae.v1";
-
-const DEFAULTS = {
-  paper: "silk",
-  w: "3.6",
-  d: "3.0",
-  h: "2.4",
-  ceil: true,
-  loss: true,
-  pRoll: "25000",
-  pLabor: "25000",
-  pExtra: "3000",
-};
-
-function num(value) {
-  const n = parseFloat(value);
-  return Number.isFinite(n) && n > 0 ? n : 0;
-}
-
-function won(value) {
-  return Math.round(value).toLocaleString("ko-KR") + "원";
-}
-
-// 한 면을 폭으로 나눈다. span = 붙여야 할 가로 길이, drop = 한 폭의 길이
-function splitRun(span, drop, paper) {
-  if (span <= 0 || drop <= 0) {
-    return { strips: 0, rolls: 0, perRoll: 0, remainder: 0, groups: [] };
-  }
-  const exact = span / paper.w;
-  const strips = Math.ceil(exact);
-  const remainder = strips - exact; // 마지막 폭이 잘리는 정도
-  const perRoll = Math.max(1, Math.floor(paper.len / drop));
-  const rolls = Math.ceil(strips / perRoll);
-
-  const groups = [];
-  for (let left = strips; left > 0; left -= perRoll) {
-    groups.push(Math.min(perRoll, left));
-  }
-  return { strips, rolls, perRoll, remainder, groups };
-}
-
-function compute(state) {
-  const paper = PAPERS[state.paper];
-  const w = num(state.w);
-  const d = num(state.d);
-  const h = num(state.h);
-
-  const pyeong = (w * d) / PYEONG;
-  const perimeter = 2 * (w + d);
-
-  const wall = splitRun(perimeter, h + MARGIN, paper);
-  const ceiling = state.ceil ? splitRun(w, d + MARGIN, paper) : null;
-
-  const base = wall.rolls + (ceiling ? ceiling.rolls : 0);
-  const rolls = state.loss ? Math.ceil(base * 1.1) : base;
-
-  const material = rolls * num(state.pRoll);
-  const labor = pyeong * num(state.pLabor);
-  const extra = pyeong * num(state.pExtra);
-  const sub = material + labor + extra;
-  const vat = sub * 0.1;
-
-  return {
-    paper, pyeong, perimeter, w, d, h,
-    wall, ceiling, base, rolls,
-    material, labor, extra, vat, total: sub + vat,
-  };
-}
-
-function Run({ title, meta, run }) {
-  const cells = [];
-  let drawn = 0;
-
-  for (let g = 0; g < run.groups.length && drawn < MAX_DRAW; g++) {
-    const strips = [];
-    for (let i = 0; i < run.groups[g] && drawn < MAX_DRAW; i++) {
-      drawn++;
-      const isLastCut = drawn === run.strips && run.remainder > 0.02;
-      strips.push(
-        <i key={i} className={isLastCut ? "strip part" : "strip"} />
-      );
-    }
-    cells.push(
-      <div className="roll" key={g}>
-        <div className="roll-strips">{strips}</div>
-        <div className="roll-tag">{g + 1}롤</div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="run">
-      <div className="run-head">
-        <span>
-          {title} <b>{run.strips}폭</b>
-        </span>
-        <span>{meta}</span>
-      </div>
-      <div className="rolls">{cells}</div>
-      {drawn < run.strips ? (
-        <div className="roll-tag" style={{ textAlign: "left" }}>
-          … 외 {run.strips - drawn}폭
-        </div>
-      ) : null}
-    </div>
-  );
-}
+import { useEffect, useRef, useState } from "react";
+import QuoteSheet from "./components/QuoteSheet";
+import { PAPERS, PAPER_KEYS, summarize, won } from "./lib/calc";
+import { blankQuote, defaultData, emptyRoom, formatDate, load, newId, save } from "./lib/store";
 
 export default function Home() {
-  const [state, setState] = useState(DEFAULTS);
+  const [data, setData] = useState(defaultData);
+  const [ready, setReady] = useState(false);
+  const [showShop, setShowShop] = useState(false);
+  const [sheetAt, setSheetAt] = useState(null);
+  const [toast, setToast] = useState("");
+  const toastTimer = useRef(null);
 
-  // 저장값은 마운트 후에 읽는다 (서버 렌더 결과와 어긋나지 않게)
+  // 저장된 값은 화면이 뜬 뒤에 읽는다
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORE_KEY);
-      if (!raw) return;
-      const saved = JSON.parse(raw);
-      setState((prev) => {
-        const next = { ...prev };
-        Object.keys(DEFAULTS).forEach((k) => {
-          if (Object.prototype.hasOwnProperty.call(saved, k)) next[k] = saved[k];
-        });
-        return next;
-      });
-    } catch (e) {
-      /* 저장을 못 읽어도 기본값으로 그냥 돈다 */
-    }
+    setData(load());
+    setReady(true);
   }, []);
 
-  function update(patch) {
-    setState((prev) => {
-      const next = { ...prev, ...patch };
-      try {
-        localStorage.setItem(STORE_KEY, JSON.stringify(next));
-      } catch (e) {
-        /* 저장 실패는 무시 */
-      }
-      return next;
+  useEffect(() => {
+    if (ready) save(data);
+  }, [data, ready]);
+
+  useEffect(() => () => clearTimeout(toastTimer.current), []);
+
+  function say(message) {
+    setToast(message);
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(""), 2200);
+  }
+
+  const { shop, quote, history } = data;
+  const summary = summarize(quote);
+
+  /* ── 상태 바꾸기 ─────────────────────────── */
+
+  const setShop = (patch) => setData((d) => ({ ...d, shop: { ...d.shop, ...patch } }));
+  const setQuote = (patch) => setData((d) => ({ ...d, quote: { ...d.quote, ...patch } }));
+  const setCustomer = (patch) =>
+    setData((d) => ({ ...d, quote: { ...d.quote, customer: { ...d.quote.customer, ...patch } } }));
+  const setPrice = (key, value) =>
+    setData((d) => ({ ...d, quote: { ...d.quote, prices: { ...d.quote.prices, [key]: value } } }));
+
+  const patchRoom = (id, patch) =>
+    setQuote({ rooms: quote.rooms.map((r) => (r.id === id ? { ...r, ...patch } : r)) });
+
+  const addRoom = () => setQuote({ rooms: [...quote.rooms, emptyRoom(quote.rooms.length)] });
+
+  const removeRoom = (id) => {
+    const rest = quote.rooms.filter((r) => r.id !== id);
+    setQuote({ rooms: rest.length ? rest : [emptyRoom(0)] });
+  };
+
+  /* ── 견적 보관 ───────────────────────────── */
+
+  function saveQuote() {
+    const entry = {
+      id: newId(),
+      savedAt: new Date().toISOString(),
+      name: quote.customer.name || "이름 없는 견적",
+      site: quote.customer.site,
+      total: summary.total,
+      quote: JSON.parse(JSON.stringify(quote)),
+    };
+    setData((d) => ({ ...d, history: [entry, ...d.history].slice(0, 50) }));
+    say("견적을 저장했습니다");
+  }
+
+  function openSaved(entry) {
+    setData((d) => ({ ...d, quote: JSON.parse(JSON.stringify(entry.quote)) }));
+    say("불러왔습니다");
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function dropSaved(id) {
+    setData((d) => ({ ...d, history: d.history.filter((h) => h.id !== id) }));
+  }
+
+  function startNew() {
+    setData((d) => ({ ...d, quote: { ...blankQuote(), prices: d.quote.prices } }));
+    say("새 견적을 시작합니다");
+  }
+
+  /* ── 내보내기 ────────────────────────────── */
+
+  function shareText() {
+    const lines = [];
+    if (shop.name) lines.push("[" + shop.name + "] 도배 견적");
+    else lines.push("도배 견적");
+    if (quote.customer.name) lines.push("고객: " + quote.customer.name);
+    if (quote.customer.site) lines.push("현장: " + quote.customer.site);
+    lines.push("");
+    summary.rooms
+      .filter((r) => r.m.strips > 0)
+      .forEach(({ room, m }) => {
+        lines.push(
+          "· " + (room.name || "방") + " " + m.w + "×" + m.d + "×" + m.h +
+          " / " + m.pyeong.toFixed(1) + "평" + (room.ceiling ? " (천장 포함)" : "")
+        );
+      });
+    lines.push("");
+    summary.materials.forEach((b) => {
+      lines.push(b.paper.label + " " + b.rolls + "롤 — " + won(b.amount));
     });
+    if (summary.labor > 0) lines.push("시공비 — " + won(summary.labor));
+    if (summary.extra > 0) lines.push("기타 비용 — " + won(summary.extra));
+    lines.push("");
+    lines.push("합계 " + won(summary.total) + (quote.vat ? " (부가세 포함)" : " (부가세 별도)"));
+    if (shop.phone) lines.push("문의 " + shop.phone);
+    return lines.join("\n");
   }
 
-  function pickPaper(key) {
-    update({ paper: key, pRoll: String(PAPERS[key].roll), pLabor: String(PAPERS[key].labor) });
+  async function shareQuote() {
+    const text = shareText();
+    const title = (shop.name ? shop.name + " " : "") + "도배 견적";
+    try {
+      if (navigator.share) {
+        await navigator.share({ title, text });
+        return;
+      }
+    } catch (e) {
+      return; // 사용자가 공유창을 닫은 경우
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      say("견적 내용을 복사했습니다");
+    } catch (e) {
+      say("공유를 지원하지 않는 환경입니다");
+    }
   }
 
-  const c = compute(state);
+  function printSheet() {
+    if (typeof window !== "undefined") window.print();
+  }
 
-  const costRows = [
-    ["바닥 면적", c.pyeong.toFixed(1) + "평", null],
-    ["자재비", won(c.material), c.rolls + "롤"],
-    ["시공비", won(c.labor), c.pyeong.toFixed(1) + "평"],
-    ["부자재", won(c.extra), "풀·초배지"],
-    ["부가세", won(c.vat), "10%"],
-  ];
+  const canQuote = summary.filledRooms > 0;
+
+  /* ── 화면 ────────────────────────────────── */
 
   return (
-    <div className="page">
-      <header className="masthead">
-        <div className="eyebrow">실크 · 합지 / 폭수 계산</div>
-        <h1>도배 견적 계산기</h1>
-        <p>방 치수를 재서 넣으면 필요한 폭수·롤 수와 예상 금액이 바로 나옵니다.</p>
-      </header>
+    <>
+      <div className="app">
+        <header className="masthead">
+          <div>
+            <h1>도배 견적</h1>
+            <p className="sub">방을 하나씩 넣으면 전체를 한 번에 계산합니다.</p>
+          </div>
+          <button type="button" className="ghost-btn" onClick={() => setShowShop((v) => !v)}>
+            {showShop ? "닫기" : "내 상호"}
+          </button>
+        </header>
 
-      <section className="panel">
-        <div className="panel-title">방 치수</div>
-        <div className="grid-3">
-          <div className="field">
-            <label htmlFor="w">
-              가로 <span className="unit">M</span>
-            </label>
-            <input
-              type="number" id="w" inputMode="decimal" step="0.1" min="0"
-              value={state.w} onChange={(e) => update({ w: e.target.value })}
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="d">
-              세로 <span className="unit">M</span>
-            </label>
-            <input
-              type="number" id="d" inputMode="decimal" step="0.1" min="0"
-              value={state.d} onChange={(e) => update({ d: e.target.value })}
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="h">
-              천장고 <span className="unit">M</span>
-            </label>
-            <input
-              type="number" id="h" inputMode="decimal" step="0.1" min="0"
-              value={state.h} onChange={(e) => update({ h: e.target.value })}
-            />
-          </div>
-        </div>
-      </section>
+        {showShop ? (
+          <section className="card">
+            <div className="card-head">
+              <span className="label">견적서에 찍힐 정보</span>
+              <span className="rule" />
+            </div>
+            <div className="grid2">
+              <label className="field">
+                <span>상호</span>
+                <input
+                  className="in" type="text" placeholder="○○도배"
+                  value={shop.name} onChange={(e) => setShop({ name: e.target.value })}
+                />
+              </label>
+              <label className="field">
+                <span>연락처</span>
+                <input
+                  className="in" type="tel" placeholder="010-0000-0000"
+                  value={shop.phone} onChange={(e) => setShop({ phone: e.target.value })}
+                />
+              </label>
+            </div>
+            <p className="note">한 번만 넣어두면 계속 쓰입니다.</p>
+          </section>
+        ) : null}
 
-      <section className="panel">
-        <div className="panel-title">벽지</div>
-        <div className="segmented" role="group" aria-label="벽지 종류">
-          {Object.keys(PAPERS).map((key) => {
-            const p = PAPERS[key];
-            return (
-              <button
-                key={key}
-                type="button"
-                aria-pressed={key === state.paper}
-                onClick={() => pickPaper(key)}
-              >
-                {p.label}
-                <span className="spec">
-                  폭 {Math.round(p.w * 100)}cm · 1롤 {p.len}m
+        <section className="card">
+          <div className="card-head">
+            <span className="label">현장</span>
+            <span className="rule" />
+            <button type="button" className="mini" onClick={startNew}>
+              새 견적
+            </button>
+          </div>
+          <div className="grid2">
+            <label className="field">
+              <span>고객명</span>
+              <input
+                className="in" type="text" placeholder="홍길동"
+                value={quote.customer.name} onChange={(e) => setCustomer({ name: e.target.value })}
+              />
+            </label>
+            <label className="field">
+              <span>현장</span>
+              <input
+                className="in" type="text" placeholder="○○아파트 101동"
+                value={quote.customer.site} onChange={(e) => setCustomer({ site: e.target.value })}
+              />
+            </label>
+          </div>
+        </section>
+
+        <section className="card">
+          <div className="card-head">
+            <span className="label">방 목록</span>
+            <span className="count">{quote.rooms.length}개</span>
+            <span className="rule" />
+          </div>
+
+          <div className="rooms">
+            {summary.rooms.map(({ room, m }) => (
+              <div className="room" key={room.id}>
+                <div className="room-top">
+                  <input
+                    className="room-name" type="text" placeholder="방 이름"
+                    aria-label="방 이름"
+                    value={room.name} onChange={(e) => patchRoom(room.id, { name: e.target.value })}
+                  />
+                  <button
+                    type="button" className="icon-btn"
+                    aria-label={(room.name || "방") + " 삭제"}
+                    onClick={() => removeRoom(room.id)}
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="grid3">
+                  <label className="field">
+                    <span>가로 <i>M</i></span>
+                    <input
+                      className="in num" type="number" inputMode="decimal" step="0.1" min="0"
+                      placeholder="0" value={room.w}
+                      onChange={(e) => patchRoom(room.id, { w: e.target.value })}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>세로 <i>M</i></span>
+                    <input
+                      className="in num" type="number" inputMode="decimal" step="0.1" min="0"
+                      placeholder="0" value={room.d}
+                      onChange={(e) => patchRoom(room.id, { d: e.target.value })}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>천장고 <i>M</i></span>
+                    <input
+                      className="in num" type="number" inputMode="decimal" step="0.1" min="0"
+                      placeholder="2.4" value={room.h}
+                      onChange={(e) => patchRoom(room.id, { h: e.target.value })}
+                    />
+                  </label>
+                </div>
+
+                <div className="room-opts">
+                  {PAPER_KEYS.map((key) => (
+                    <button
+                      key={key} type="button" className="chip"
+                      aria-pressed={room.paper === key}
+                      onClick={() => patchRoom(room.id, { paper: key })}
+                    >
+                      {PAPERS[key].label}
+                    </button>
+                  ))}
+                  <span className="chip-gap" />
+                  <button
+                    type="button" className="chip"
+                    aria-pressed={!!room.ceiling}
+                    onClick={() => patchRoom(room.id, { ceiling: !room.ceiling })}
+                  >
+                    천장 포함
+                  </button>
+                </div>
+
+                <div className="room-out">
+                  {m.strips > 0 ? (
+                    <>
+                      <span>{m.pyeong.toFixed(1)}평</span>
+                      <span>둘레 {m.perimeter.toFixed(1)}m</span>
+                      <span>
+                        벽 <b>{m.wall.strips}폭</b>
+                        {m.ceiling.strips > 0 ? " · 천장 " : ""}
+                        {m.ceiling.strips > 0 ? <b>{m.ceiling.strips}폭</b> : null}
+                      </span>
+                      <span>약 <b>{m.rollsExact.toFixed(1)}롤</b></span>
+                    </>
+                  ) : (
+                    <span className="none">치수를 넣으면 물량이 나옵니다</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <button type="button" className="add-room" onClick={addRoom}>
+            ＋ 방 추가
+          </button>
+        </section>
+
+        <section className="card">
+          <div className="card-head">
+            <span className="label">벽지 단가</span>
+            <span className="rule" />
+          </div>
+          <div className="grid2">
+            {PAPER_KEYS.map((key) => (
+              <label className="field" key={key}>
+                <span>
+                  {PAPERS[key].label} <i>원/롤</i>
                 </span>
-              </button>
-            );
-          })}
-        </div>
-        <div className="toggles">
-          <label className="toggle">
+                <input
+                  className="in num" type="number" inputMode="numeric" step="1000" min="0"
+                  value={quote.prices[key]} onChange={(e) => setPrice(key, e.target.value)}
+                />
+              </label>
+            ))}
+          </div>
+          <label className="check">
             <input
-              type="checkbox" checked={state.ceil}
-              onChange={(e) => update({ ceil: e.target.checked })}
-            />
-            천장도 시공
-            <span className="sub">가로 방향 붙임</span>
-          </label>
-          <label className="toggle">
-            <input
-              type="checkbox" checked={state.loss}
-              onChange={(e) => update({ loss: e.target.checked })}
+              type="checkbox" checked={quote.loss}
+              onChange={(e) => setQuote({ loss: e.target.checked })}
             />
             여유분 추가
-            <span className="sub">+10%</span>
+            <span className="tail">+10%</span>
           </label>
-        </div>
-      </section>
+        </section>
 
-      <section className="panel">
-        <div className="panel-title">폭 나누기</div>
-        <div className="diagram">
-          {c.wall.strips === 0 ? (
-            <div className="empty">방 치수를 넣으면 폭이 어떻게 나뉘는지 그려집니다.</div>
-          ) : (
-            <>
-              <Run
-                title="벽"
-                meta={`둘레 ${c.perimeter.toFixed(1)}m ÷ 폭 ${c.paper.w}m · 1롤 ${c.wall.perRoll}폭`}
-                run={c.wall}
-              />
-              {c.ceiling && c.ceiling.strips > 0 ? (
-                <Run
-                  title="천장"
-                  meta={`가로 ${c.w.toFixed(1)}m ÷ 폭 ${c.paper.w}m · 1롤 ${c.ceiling.perRoll}폭`}
-                  run={c.ceiling}
-                />
-              ) : null}
-            </>
-          )}
-        </div>
-        <div className="legend">
-          <span>
-            <i className="swatch full" /> 온전한 폭
-          </span>
-          <span>
-            <i className="swatch part" /> 마지막 자투리 폭
-          </span>
-          <span>막대 한 칸 = 1폭</span>
-        </div>
-      </section>
-
-      <section className="panel">
-        <div className="panel-title">견적</div>
-
-        <div className="headline">
-          <div className="n">
-            {c.rolls}
-            <span>롤</span>
+        <section className="card">
+          <div className="card-head">
+            <span className="label">금액</span>
+            <span className="rule" />
           </div>
-          <div className="cap">
-            {state.loss && c.rolls > c.base
-              ? `필요한 벽지 · 여유분 포함 (기본 ${c.base}롤)`
-              : "필요한 벽지"}
-          </div>
-        </div>
 
-        <div className="rows">
-          {costRows.map(([k, v, note]) => (
-            <div className="row" key={k}>
-              <span className="k">
-                {k}
-                {note ? <em>{note}</em> : null}
-              </span>
-              <span className="v">{v}</span>
-            </div>
-          ))}
-          <div className="row sum">
-            <span className="k">총 예상 금액</span>
-            <span className="v">{won(c.total)}</span>
+          <div className="rows">
+            {summary.materials.length ? (
+              summary.materials.map((b) => (
+                <div className="row" key={b.paper.key}>
+                  <span className="k">
+                    {b.paper.label}
+                    <em>{b.rolls}롤 × {b.price.toLocaleString("ko-KR")}</em>
+                  </span>
+                  <span className="v">{won(b.amount)}</span>
+                </div>
+              ))
+            ) : (
+              <div className="row muted">
+                <span className="k">자재비</span>
+                <span className="v">—</span>
+              </div>
+            )}
           </div>
-        </div>
 
-        <details>
-          <summary>단가 고치기</summary>
-          <div className="price-body">
-            <div className="field">
-              <label htmlFor="pRoll">
-                벽지 1롤 <span className="unit">원</span>
-              </label>
+          <div className="grid2">
+            <label className="field">
+              <span>시공비 <i>원</i></span>
               <input
-                type="number" id="pRoll" inputMode="numeric" step="1000" min="0"
-                value={state.pRoll} onChange={(e) => update({ pRoll: e.target.value })}
+                className="in num" type="number" inputMode="numeric" step="10000" min="0"
+                placeholder="현장 보고 입력" value={quote.labor}
+                onChange={(e) => setQuote({ labor: e.target.value })}
               />
-            </div>
-            <div className="grid-2">
-              <div className="field">
-                <label htmlFor="pLabor">
-                  시공비 <span className="unit">원/평</span>
-                </label>
-                <input
-                  type="number" id="pLabor" inputMode="numeric" step="1000" min="0"
-                  value={state.pLabor} onChange={(e) => update({ pLabor: e.target.value })}
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="pExtra">
-                  부자재 <span className="unit">원/평</span>
-                </label>
-                <input
-                  type="number" id="pExtra" inputMode="numeric" step="500" min="0"
-                  value={state.pExtra} onChange={(e) => update({ pExtra: e.target.value })}
-                />
-              </div>
-            </div>
+            </label>
+            <label className="field">
+              <span>기타 비용 <i>원</i></span>
+              <input
+                className="in num" type="number" inputMode="numeric" step="10000" min="0"
+                placeholder="비우면 생략" value={quote.extra}
+                onChange={(e) => setQuote({ extra: e.target.value })}
+              />
+            </label>
           </div>
-        </details>
-      </section>
 
-      <section className="panel notes">
-        <h2>계산 방식</h2>
-        <p>
-          벽 둘레를 벽지 폭으로 나눠 <b>필요한 폭수</b>를 구하고, 1롤에서 몇 폭이 나오는지로{" "}
-          <b>롤 수</b>를 냅니다. 한 폭마다 재단 여유 <code>10cm</code>를 더해 자릅니다. 천장은
-          가로 방향으로 붙이고, 한 폭의 길이를 세로 치수로 잡습니다.
-        </p>
-        <p>
-          <b>빠진 것</b> — 문·창문 공제, 몰딩, 벽면 상태(곰팡이·단차·석고 보수), 계단·복도처럼
-          층고가 다른 구간, 걸레받이. 실제 견적은 현장을 보고 잡으셔야 합니다. 여기 나오는 금액은{" "}
-          <b>현장 나가기 전 대략 잡는 용도</b>입니다.
-        </p>
-      </section>
-    </div>
+          <label className="check">
+            <input
+              type="checkbox" checked={quote.vat}
+              onChange={(e) => setQuote({ vat: e.target.checked })}
+            />
+            부가세 포함
+            <span className="tail">10%</span>
+          </label>
+
+          <div className="rows">
+            <div className="row">
+              <span className="k">
+                자재비<em>{summary.rollCount}롤</em>
+              </span>
+              <span className="v">{won(summary.material)}</span>
+            </div>
+            {summary.labor > 0 ? (
+              <div className="row">
+                <span className="k">시공비</span>
+                <span className="v">{won(summary.labor)}</span>
+              </div>
+            ) : null}
+            {summary.extra > 0 ? (
+              <div className="row">
+                <span className="k">기타 비용</span>
+                <span className="v">{won(summary.extra)}</span>
+              </div>
+            ) : null}
+            {quote.vat ? (
+              <div className="row">
+                <span className="k">
+                  부가세<em>10%</em>
+                </span>
+                <span className="v">{won(summary.vat)}</span>
+              </div>
+            ) : null}
+          </div>
+        </section>
+
+        <section className="card">
+          <div className="card-head">
+            <span className="label">지난 견적</span>
+            {history.length ? <span className="count">{history.length}건</span> : null}
+            <span className="rule" />
+          </div>
+          {history.length ? (
+            <div className="hist">
+              {history.map((h) => (
+                <div className="hist-item" key={h.id}>
+                  <div className="hist-main">
+                    <span className="who">
+                      {h.name}
+                      {h.site ? " · " + h.site : ""}
+                    </span>
+                    <span className="when">{formatDate(h.savedAt)}</span>
+                  </div>
+                  <span className="hist-amt">{won(h.total)}</span>
+                  <button type="button" className="mini" onClick={() => openSaved(h)}>
+                    불러오기
+                  </button>
+                  <button
+                    type="button" className="icon-btn"
+                    aria-label={h.name + " 삭제"}
+                    onClick={() => dropSaved(h.id)}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="empty">저장한 견적이 아직 없습니다.</p>
+          )}
+        </section>
+
+        <section className="card">
+          <div className="card-head">
+            <span className="label">알아두실 점</span>
+            <span className="rule" />
+          </div>
+          <p className="note">
+            벽 둘레를 벽지 폭으로 나눠 <b>폭수</b>를 구하고, 1롤에서 몇 폭이 나오는지로 롤 수를
+            냅니다. 폭마다 재단 여유 <code>10cm</code>를 더합니다. 방마다 롤을 올림하지 않고
+            <b> 현장 전체에서 한 번만 올림</b>하므로 자투리가 덜 남습니다.
+          </p>
+          <p className="note">
+            문·창문 공제, 몰딩, 벽면 상태, 걸레받이, 폐기물 처리는 빠져 있습니다. 저장한 견적은
+            <b> 이 기기 안에만</b> 남습니다.
+          </p>
+        </section>
+      </div>
+
+      <div className="dock no-print">
+        <div className="dock-in">
+          <div className="dock-sum">
+            <span className="cap">
+              총 {summary.filledRooms}개소 · 벽지 {summary.rollCount}롤
+              {quote.vat ? " · 부가세 포함" : " · 부가세 별도"}
+            </span>
+            <span className="amt">{won(summary.total)}</span>
+          </div>
+          <button type="button" className="btn quiet" onClick={saveQuote} disabled={!canQuote}>
+            저장
+          </button>
+          <button
+            type="button" className="btn" disabled={!canQuote}
+            onClick={() => setSheetAt(new Date().toISOString())}
+          >
+            견적서
+          </button>
+        </div>
+      </div>
+
+      {sheetAt ? (
+        <QuoteSheet
+          shop={shop}
+          quote={quote}
+          summary={summary}
+          issuedAt={sheetAt}
+          onClose={() => setSheetAt(null)}
+          onShare={shareQuote}
+          onPrint={printSheet}
+        />
+      ) : null}
+
+      {toast ? <div className="toast">{toast}</div> : null}
+    </>
   );
 }
