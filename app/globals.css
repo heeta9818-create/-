@@ -1025,3 +1025,59 @@ table.cmp .txt {
   background: var(--accent);
   border-color: var(--accent);
 }
+
+/* 측정기 상태 줄 */
+.bt-state {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  background: var(--accent-soft);
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.bt-state .ok { flex: 1; min-width: 0; color: var(--accent-ink); font-weight: 600; }
+
+.bt-state .hunting { flex: 1; min-width: 0; color: var(--accent-ink); }
+
+/* ── 메모 붙여넣기 ───────────────────────── */
+
+.memo { display: flex; flex-direction: column; gap: 10px; }
+
+.memo-in {
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1.7;
+  resize: vertical;
+  min-height: 110px;
+}
+
+.memo-in::placeholder { color: var(--faint); }
+
+.memo-out {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 11px 12px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-sm);
+}
+
+.memo-out .sub-lead { padding: 0 0 3px; }
+
+.memo-line {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-ink);
+  letter-spacing: .01em;
+}
+
+.memo-line b { font-family: var(--sans); font-weight: 700; }
+
+.memo-actions { display: flex; gap: 8px; }
+
+.memo-actions .btn { flex: 1; }

@@ -4,7 +4,11 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import QuoteSheet from "./components/QuoteSheet";
 import { FREE_SAVE_LIMIT, isPro } from "./lib/plan";
-import { FIELD_LABEL, connectDisto, nextField, supported as btSupported } from "./lib/disto";
+import {
+  DECODER_LABEL, FIELD_LABEL, connectMeter, forgetProfile, nextField,
+  supported as btSupported,
+} from "./lib/meter";
+import { SAMPLE, parseMemo } from "./lib/parse";
 import { PAPERS, PAPER_KEYS, summarize, won } from "./lib/calc";
 import { blankQuote, defaultData, emptyRoom, formatDate, load, newId, save } from "./lib/store";
 
@@ -20,7 +24,12 @@ export default function Home() {
   const [btOk, setBtOk] = useState(false);
   const [bt, setBt] = useState(null); // 연결되면 { name, disconnect }
   const [btMsg, setBtMsg] = useState("");
+  const [meter, setMeter] = useState(null); // { profile, listening, learned }
   const [aim, setAim] = useState(null); // { roomId, field }
+
+  // 메모장 붙여넣기
+  const [memoOpen, setMemoOpen] = useState(false);
+  const [memoText, setMemoText] = useState("");
   const aimRef = useRef(null);
   const dataRef = useRef(null);
   const btRef = useRef(null);
@@ -170,7 +179,8 @@ export default function Home() {
   /* ── 레이저 측정기 ───────────────────────── */
 
   // 측정기에서 값이 하나 올 때마다 조준한 칸을 채우고 다음 칸으로 넘어간다
-  function onDistance(metres) {
+  function onDistance(metres, info) {
+    if (info) setMeter((m) => (m ? { ...m, profile: info } : m));
     const target = aimRef.current;
     if (!target) return;
     const current = dataRef.current;
@@ -186,24 +196,29 @@ export default function Home() {
     setAim(next ? { roomId: target.roomId, field: next } : null);
   }
 
-  async function connectMeter() {
+  async function linkMeter(relearn) {
     setBtMsg("");
     try {
-      const conn = await connectDisto({
+      const conn = await connectMeter({
+        relearn,
         onDistance,
         onStatus: (m) => setBtMsg(m),
+        onFound: (profile) => say("측정값 위치를 찾았습니다"),
         onDisconnect: (name) => {
           setBt(null);
+          setMeter(null);
           setAim(null);
           setBtMsg(name + " 연결이 끊겼습니다");
         },
       });
       setBt(conn);
+      setMeter({ profile: conn.profile, listening: conn.listening, learned: conn.learned });
       setBtMsg("");
       say(conn.name + " 연결됨");
     } catch (e) {
       setBt(null);
-      // 사용자가 기기 선택창을 그냥 닫은 경우는 조용히 넘어간다
+      setMeter(null);
+      // 기기 선택창을 그냥 닫은 경우는 조용히 넘어간다
       if (e && e.name === "NotFoundError") {
         setBtMsg("");
         return;
@@ -212,11 +227,38 @@ export default function Home() {
     }
   }
 
-  function disconnectMeter() {
+  function unlinkMeter() {
     if (bt) bt.disconnect();
     setBt(null);
+    setMeter(null);
     setAim(null);
     setBtMsg("");
+  }
+
+  function relearnMeter() {
+    if (bt) {
+      forgetProfile(bt.name);
+      bt.disconnect();
+    }
+    setBt(null);
+    setMeter(null);
+    setAim(null);
+    say("기억을 지웠습니다. 다시 연결해 주세요");
+  }
+
+  /* ── 메모장 붙여넣기 ─────────────────────── */
+
+  function applyMemo(replace) {
+    const parsed = parseMemo(memoText);
+    if (!parsed.length) {
+      say("치수를 못 찾았습니다");
+      return;
+    }
+    const made = parsed.map((r) => ({ ...emptyRoom(0), ...r, id: newId() }));
+    setQuote({ rooms: replace ? made : quote.rooms.concat(made) });
+    setMemoOpen(false);
+    setMemoText("");
+    say(made.length + "개 방을 넣었습니다");
   }
 
   function aimAt(roomId, field) {
@@ -226,6 +268,7 @@ export default function Home() {
   }
 
   const canQuote = summary.filledRooms > 0;
+  const memoPreview = memoOpen ? parseMemo(memoText) : [];
 
   /* ── 화면 ────────────────────────────────── */
 
@@ -307,16 +350,39 @@ export default function Home() {
               <span className="rule" />
             </div>
             <div className="bt-row">
-              <span className="bt-name">{bt ? bt.name : "라이카 디스토 · 블루투스"}</span>
-              <button type="button" className="mini" onClick={bt ? disconnectMeter : connectMeter}>
+              <span className="bt-name">{bt ? bt.name : "블루투스 측정기 (브랜드 무관)"}</span>
+              <button type="button" className="mini" onClick={bt ? unlinkMeter : () => linkMeter(false)}>
                 {bt ? "연결 끊기" : "연결하기"}
               </button>
             </div>
+
             {btMsg ? <p className="bt-msg">{btMsg}</p> : null}
+
+            {bt && meter ? (
+              <div className="bt-state">
+                {meter.profile ? (
+                  <>
+                    <span className="ok">
+                      측정값 위치 {meter.learned ? "기억해 둔 것 사용" : "찾음"}
+                      {meter.profile.decoder ? " · " + DECODER_LABEL[meter.profile.decoder] : ""}
+                    </span>
+                    <button type="button" className="mini" onClick={relearnMeter}>
+                      값이 이상해요
+                    </button>
+                  </>
+                ) : (
+                  <span className="hunting">
+                    측정기 버튼을 한 번 눌러 주세요. 어느 신호가 거리값인지 찾습니다.
+                    {meter.listening ? " (" + meter.listening.length + "개 신호 감시 중)" : ""}
+                  </span>
+                )}
+              </div>
+            ) : null}
+
             <p className="note">
               {bt
                 ? "방 카드에서 채울 칸을 누른 뒤 측정기 버튼을 누르면 숫자가 들어갑니다. 한 칸이 차면 다음 칸으로 자동으로 넘어갑니다."
-                : "측정기 전원과 블루투스를 켜고 연결하기를 누르세요. 처음이라면 숫자가 제대로 들어오는지 꼭 손으로 잰 값과 맞춰보세요."}
+                : "브랜드를 가리지 않고 붙여 봅니다. 측정기 전원과 블루투스를 켜고 연결하기를 누른 뒤, 측정기 버튼을 한 번 누르면 앱이 거리값을 찾아냅니다. 처음에는 꼭 줄자와 맞춰보세요."}
             </p>
           </section>
         ) : null}
@@ -326,7 +392,58 @@ export default function Home() {
             <span className="label">방 목록</span>
             <span className="count">{quote.rooms.length}개</span>
             <span className="rule" />
+            <button type="button" className="mini" onClick={() => setMemoOpen((v) => !v)}>
+              {memoOpen ? "닫기" : "메모 붙여넣기"}
+            </button>
           </div>
+
+          {memoOpen ? (
+            <div className="memo">
+              <textarea
+                className="in memo-in"
+                rows={5}
+                placeholder={SAMPLE}
+                value={memoText}
+                onChange={(e) => setMemoText(e.target.value)}
+                aria-label="메모 붙여넣기"
+              />
+              {memoText.trim() ? (
+                memoPreview.length ? (
+                  <div className="memo-out">
+                    <span className="sub-lead">읽은 결과 {memoPreview.length}개</span>
+                    {memoPreview.map((r, i) => (
+                      <span className="memo-line" key={i}>
+                        <b>{r.name}</b> {r.w}×{r.d || "?"}×{r.h}
+                        {r.ceiling ? (r.cw ? " · 천장 " + r.cw + "×" + r.cd : " · 천장") : " · 벽만"}
+                        {r.paper === "hapji" ? " · 합지" : ""}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="bt-msg">치수를 못 찾았습니다. 숫자가 들어간 줄이 있는지 봐주세요.</p>
+                )
+              ) : (
+                <p className="note">
+                  메모장 내용을 그대로 붙여넣으세요. <code>안방 3.6 x 3.0 x 2.4</code> 같은 줄을
+                  알아서 읽습니다. <b>cm·mm도 알아서 바꿉니다.</b> 숫자 없는 줄은 그냥 넘어갑니다.
+                </p>
+              )}
+              <div className="memo-actions">
+                <button
+                  type="button" className="btn" disabled={!memoPreview.length}
+                  onClick={() => applyMemo(false)}
+                >
+                  방 목록에 추가
+                </button>
+                <button
+                  type="button" className="btn quiet" disabled={!memoPreview.length}
+                  onClick={() => applyMemo(true)}
+                >
+                  전부 바꾸기
+                </button>
+              </div>
+            </div>
+          ) : null}
 
           <div className="rooms">
             {summary.rooms.map(({ room, m }) => (
