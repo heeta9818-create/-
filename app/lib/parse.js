@@ -62,12 +62,14 @@ function parseLine(line, index) {
 
   const text = line.replace(/\s+/g, "");
   const paper = /합지/.test(text) ? "hapji" : "silk";
-  const ceiling = !/천장(제외|없음|x|X|엑스)|벽만|벽지만/.test(text);
+  // 천장은 기본으로 포함한다. 빼라고 적혀 있을 때만 끈다.
+  const ceilingOff = /천장(제외|뺌|빼고|없음|안함|X|x|엑스)|벽만|벽지만|벽면만/.test(text);
+  const ceiling = !ceilingOff;
 
   // 이름에서 옵션 단어는 빼고 남은 것만 쓴다
   const name =
     words
-      .filter((w) => !/^(실크|합지|벽지|천장|천장제외|천장없음|벽만|포함)$/.test(w))
+      .filter((w) => !/^(천장.*|벽만|벽지만|벽면만|실크.*|합지.*|벽지|포함|제외|시공)$/.test(w))
       .join(" ")
       .trim() || "방 " + (index + 1);
 

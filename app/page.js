@@ -30,6 +30,7 @@ export default function Home() {
   // 메모장 붙여넣기
   const [memoOpen, setMemoOpen] = useState(false);
   const [memoText, setMemoText] = useState("");
+  const memoBackup = useRef(null); // 붙여넣기 전 방 목록
   const aimRef = useRef(null);
   const dataRef = useRef(null);
   const btRef = useRef(null);
@@ -248,17 +249,33 @@ export default function Home() {
 
   /* ── 메모장 붙여넣기 ─────────────────────── */
 
-  function applyMemo(replace) {
-    const parsed = parseMemo(memoText);
-    if (!parsed.length) {
-      say("치수를 못 찾았습니다");
-      return;
-    }
-    const made = parsed.map((r) => ({ ...emptyRoom(0), ...r, id: newId() }));
-    setQuote({ rooms: replace ? made : quote.rooms.concat(made) });
-    setMemoOpen(false);
+  // 붙여넣는 즉시 방 목록에 반영한다. 버튼을 한 번 더 누르게 하지 않는다.
+  function onMemoChange(text) {
+    setMemoText(text);
+    const parsed = parseMemo(text);
+    if (!parsed.length) return;
+
+    // 처음 반영할 때 원래 방 목록을 챙겨둔다 (되돌리기용)
+    if (memoBackup.current === null) memoBackup.current = quote.rooms;
+
+    setQuote({
+      rooms: parsed.map((r, i) => ({ ...emptyRoom(0), ...r, id: "memo-" + i })),
+    });
+  }
+
+  function undoMemo() {
+    if (!memoBackup.current) return;
+    setQuote({ rooms: memoBackup.current });
+    memoBackup.current = null;
     setMemoText("");
-    say(made.length + "개 방을 넣었습니다");
+    say("되돌렸습니다");
+  }
+
+  function toggleMemo() {
+    setMemoOpen((open) => {
+      if (open) memoBackup.current = null; // 닫으면 그대로 확정
+      return !open;
+    });
   }
 
   function aimAt(roomId, field) {
@@ -269,6 +286,7 @@ export default function Home() {
 
   const canQuote = summary.filledRooms > 0;
   const memoPreview = memoOpen ? parseMemo(memoText) : [];
+  const ceilingRooms = summary.rooms.filter((r) => r.room.ceiling && r.m.strips > 0).length;
 
   /* ── 화면 ────────────────────────────────── */
 
@@ -392,7 +410,7 @@ export default function Home() {
             <span className="label">방 목록</span>
             <span className="count">{quote.rooms.length}개</span>
             <span className="rule" />
-            <button type="button" className="mini" onClick={() => setMemoOpen((v) => !v)}>
+            <button type="button" className="mini" onClick={toggleMemo}>
               {memoOpen ? "닫기" : "메모 붙여넣기"}
             </button>
           </div>
@@ -404,44 +422,64 @@ export default function Home() {
                 rows={5}
                 placeholder={SAMPLE}
                 value={memoText}
-                onChange={(e) => setMemoText(e.target.value)}
+                onChange={(e) => onMemoChange(e.target.value)}
                 aria-label="메모 붙여넣기"
               />
               {memoText.trim() ? (
                 memoPreview.length ? (
-                  <div className="memo-out">
-                    <span className="sub-lead">읽은 결과 {memoPreview.length}개</span>
-                    {memoPreview.map((r, i) => (
-                      <span className="memo-line" key={i}>
-                        <b>{r.name}</b> {r.w}×{r.d || "?"}×{r.h}
-                        {r.ceiling ? (r.cw ? " · 천장 " + r.cw + "×" + r.cd : " · 천장") : " · 벽만"}
-                        {r.paper === "hapji" ? " · 합지" : ""}
-                      </span>
-                    ))}
-                  </div>
+                  <>
+                    <div className="memo-out">
+                      <span className="sub-lead">읽은 방 {memoPreview.length}개</span>
+                      {memoPreview.map((r, i) => (
+                        <span className="memo-line" key={i}>
+                          <b>{r.name}</b> {r.w}×{r.d || "?"}×{r.h}
+                          {r.ceiling ? (r.cw ? " · 천장 " + r.cw + "×" + r.cd : " · 천장 포함") : " · 벽만"}
+                          {r.paper === "hapji" ? " · 합지" : ""}
+                        </span>
+                      ))}
+                    </div>
+
+                    <div className="memo-sum">
+                      <div className="memo-sum-row">
+                        <span>{summary.filledRooms}개소 · {summary.pyeong.toFixed(1)}평</span>
+                        <span>
+                          {ceilingRooms > 0 ? "천장 " + ceilingRooms + "개소 포함" : "천장 없음"}
+                        </span>
+                      </div>
+                      <div className="memo-sum-row rolls">
+                        {summary.materials.length ? (
+                          summary.materials.map((b) => (
+                            <span key={b.paper.key}>
+                              {b.paper.label} <b>{b.rolls}롤</b>
+                            </span>
+                          ))
+                        ) : (
+                          <span>벽지 —</span>
+                        )}
+                      </div>
+                      <div className="memo-sum-total">
+                        <span>예상 금액{quote.vat ? " (부가세 포함)" : ""}</span>
+                        <b>{won(summary.total)}</b>
+                      </div>
+                    </div>
+
+                    {memoBackup.current ? (
+                      <button type="button" className="btn quiet" onClick={undoMemo}>
+                        붙여넣기 전으로 되돌리기
+                      </button>
+                    ) : null}
+                  </>
                 ) : (
                   <p className="bt-msg">치수를 못 찾았습니다. 숫자가 들어간 줄이 있는지 봐주세요.</p>
                 )
               ) : (
                 <p className="note">
-                  메모장 내용을 그대로 붙여넣으세요. <code>안방 3.6 x 3.0 x 2.4</code> 같은 줄을
-                  알아서 읽습니다. <b>cm·mm도 알아서 바꿉니다.</b> 숫자 없는 줄은 그냥 넘어갑니다.
+                  메모장 내용을 그대로 붙여넣으면 <b>바로 아래에 견적이 나옵니다.</b> 따로 누를
+                  버튼은 없습니다. <code>안방 3.6 x 3.0 x 2.4</code> 같은 줄을 알아서 읽고,
+                  cm·mm도 알아서 바꿉니다. <b>천장은 기본으로 포함</b>하며, 빼려면 줄 끝에{" "}
+                  <code>천장제외</code>라고 적으세요.
                 </p>
               )}
-              <div className="memo-actions">
-                <button
-                  type="button" className="btn" disabled={!memoPreview.length}
-                  onClick={() => applyMemo(false)}
-                >
-                  방 목록에 추가
-                </button>
-                <button
-                  type="button" className="btn quiet" disabled={!memoPreview.length}
-                  onClick={() => applyMemo(true)}
-                >
-                  전부 바꾸기
-                </button>
-              </div>
             </div>
           ) : null}
 

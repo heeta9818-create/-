@@ -1078,6 +1078,51 @@ table.cmp .txt {
 
 .memo-line b { font-family: var(--sans); font-weight: 700; }
 
-.memo-actions { display: flex; gap: 8px; }
+/* 붙여넣자마자 나오는 견적 */
+.memo-sum {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 13px 14px;
+  background: var(--ink);
+  border-radius: var(--r-md);
+}
 
-.memo-actions .btn { flex: 1; }
+.memo-sum-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px 14px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--paper);
+  opacity: .72;
+  letter-spacing: .01em;
+}
+
+.memo-sum-row.rolls { opacity: 1; justify-content: flex-start; }
+
+.memo-sum-row.rolls span { opacity: .72; }
+
+.memo-sum-row.rolls b { color: var(--paper); font-weight: 700; opacity: 1; }
+
+.memo-sum-total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(150, 160, 150, .28);
+}
+
+.memo-sum-total span { font-size: 12.5px; color: var(--paper); opacity: .72; }
+
+.memo-sum-total b {
+  font-family: var(--mono);
+  font-size: 23px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-line);
+}
