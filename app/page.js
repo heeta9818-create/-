@@ -157,25 +157,6 @@ export default function Home() {
     return lines.join("\n");
   }
 
-  async function shareQuote() {
-    const text = shareText();
-    const title = (shop.name ? shop.name + " " : "") + "도배 견적";
-    try {
-      if (navigator.share) {
-        await navigator.share({ title, text });
-        return;
-      }
-    } catch (e) {
-      return; // 사용자가 공유창을 닫은 경우
-    }
-    try {
-      await navigator.clipboard.writeText(text);
-      say("견적 내용을 복사했습니다");
-    } catch (e) {
-      say("공유를 지원하지 않는 환경입니다");
-    }
-  }
-
   function printSheet() {
     if (typeof window !== "undefined") window.print();
   }
@@ -840,8 +821,9 @@ export default function Home() {
           quote={quote}
           summary={summary}
           issuedAt={sheetAt}
+          text={shareText()}
+          onToast={say}
           onClose={() => setSheetAt(null)}
-          onShare={shareQuote}
           onPrint={printSheet}
         />
       ) : null}

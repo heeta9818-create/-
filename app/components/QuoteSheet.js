@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { won } from "../lib/calc";
 import { FREE_MARK } from "../lib/plan";
 import { formatDate, quoteNo } from "../lib/store";
 
-export default function QuoteSheet({ pro, shop, quote, summary, issuedAt, onClose, onShare, onPrint }) {
+export default function QuoteSheet({ pro, shop, quote, summary, issuedAt, text, onToast, onClose, onPrint }) {
+  const [pickOpen, setPickOpen] = useState(false);
+  const [why, setWhy] = useState("");
   // 인쇄할 때 앱 화면은 빼고 이 종이만 나가게 표시해 둔다
   useEffect(() => {
     document.body.classList.add("sheet-open");
@@ -21,6 +23,76 @@ export default function QuoteSheet({ pro, shop, quote, summary, issuedAt, onClos
   }, [onClose]);
 
   const rooms = summary.rooms.filter((r) => r.m.strips > 0);
+
+  const title = (shop.name ? shop.name + " " : "") + "도배 견적";
+  const canSystemShare = typeof navigator !== "undefined" && !!navigator.share;
+
+  // 폰의 공유창(카톡·문자·인스타 목록)을 띄운다
+  async function systemShare() {
+    try {
+      await navigator.share({ title, text });
+      setPickOpen(false);
+    } catch (e) {
+      if (e && e.name === "AbortError") return; // 사용자가 공유창을 닫음
+      setWhy("휴대폰 공유창이 열리지 않았습니다. 아래에서 골라 주세요.");
+      setPickOpen(true);
+    }
+  }
+
+  // 공유 버튼을 누르면 바로 공유창부터 시도하고, 안 되면 목록을 편다
+  function onShareTap() {
+    setWhy("");
+    if (canSystemShare) {
+      systemShare();
+      return;
+    }
+    setWhy("이 브라우저에는 공유창이 없습니다. 카톡·인스타는 복사해서 붙여넣으세요.");
+    setPickOpen(true);
+  }
+
+  function smsShare() {
+    const ios = /iPad|iPhone|iPod/.test(navigator.userAgent || "");
+    window.location.href = "sms:" + (ios ? "&" : "?") + "body=" + encodeURIComponent(text);
+    setPickOpen(false);
+  }
+
+  // 앱 안 브라우저에서는 최신 복사 기능이 막혀 있어 옛날 방식도 준비해 둔다
+  function oldCopy() {
+    try {
+      const box = document.createElement("textarea");
+      box.value = text;
+      box.setAttribute("readonly", "");
+      box.style.position = "fixed";
+      box.style.opacity = "0";
+      document.body.appendChild(box);
+      box.select();
+      box.setSelectionRange(0, text.length);
+      const ok = document.execCommand("copy");
+      document.body.removeChild(box);
+      return ok;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  async function copyText() {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        onToast("복사했습니다. 카톡에 붙여넣으세요");
+        setPickOpen(false);
+        return;
+      }
+    } catch (e) {
+      /* 다음 방법으로 */
+    }
+    if (oldCopy()) {
+      onToast("복사했습니다. 카톡에 붙여넣으세요");
+      setPickOpen(false);
+    } else {
+      setWhy("복사가 막혀 있습니다. 아래 글을 길게 눌러 복사해 주세요.");
+    }
+  }
 
   return (
     <div className="scrim" role="dialog" aria-modal="true" aria-label="견적서">
@@ -190,11 +262,35 @@ export default function QuoteSheet({ pro, shop, quote, summary, issuedAt, onClos
         {pro ? null : <div className="sheet-mark">{FREE_MARK}</div>}
       </div>
 
+      {pickOpen ? (
+        <div className="picker no-print">
+          {why ? <p className="picker-why">{why}</p> : null}
+          {canSystemShare ? (
+            <button type="button" className="pick" onClick={systemShare}>
+              <b>휴대폰 공유창 열기</b>
+              <span>카톡 · 문자 · 인스타 목록에서 고르기</span>
+            </button>
+          ) : null}
+          <button type="button" className="pick" onClick={smsShare}>
+            <b>문자로 보내기</b>
+            <span>문자 앱이 내용과 함께 열립니다</span>
+          </button>
+          <button type="button" className="pick" onClick={copyText}>
+            <b>내용 복사하기</b>
+            <span>카톡·인스타에 붙여넣으세요</span>
+          </button>
+          <textarea className="picker-text" readOnly value={text} aria-label="견적 내용" />
+          <button type="button" className="pick quiet" onClick={() => setPickOpen(false)}>
+            <b>닫기</b>
+          </button>
+        </div>
+      ) : null}
+
       <div className="sheet-actions no-print">
         <button type="button" className="btn" onClick={onPrint}>
           PDF로 저장
         </button>
-        <button type="button" className="btn quiet" onClick={onShare}>
+        <button type="button" className="btn quiet" onClick={onShareTap}>
           공유하기
         </button>
         <button type="button" className="btn quiet" onClick={onClose}>

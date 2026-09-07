@@ -1126,3 +1126,68 @@ table.cmp .txt {
   font-variant-numeric: tabular-nums;
   color: var(--accent-line);
 }
+
+/* ── 공유 수단 고르기 ────────────────────── */
+
+.picker {
+  width: 100%;
+  max-width: 620px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 12px;
+  background: var(--surface);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.picker-why {
+  margin: 0 0 3px;
+  padding: 9px 11px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-radius: var(--r-sm);
+}
+
+.pick {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  text-align: left;
+  background: var(--inset);
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  cursor: pointer;
+  transition: background .12s, border-color .12s;
+}
+
+.pick b { font-size: 15px; font-weight: 700; letter-spacing: -.02em; color: var(--ink); }
+
+.pick span { font-size: 12px; color: var(--muted); }
+
+.pick:hover { background: var(--accent-soft); border-color: var(--accent-line); }
+
+.pick:hover b { color: var(--accent-ink); }
+
+.pick:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.pick.quiet { background: transparent; }
+
+.pick.quiet b { font-size: 14px; font-weight: 600; color: var(--muted); text-align: center; }
+
+.picker-text {
+  width: 100%;
+  min-height: 96px;
+  padding: 10px 11px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--ink);
+  background: var(--inset);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  resize: vertical;
+}
