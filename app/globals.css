@@ -978,3 +978,50 @@ table.cmp .txt {
 .head-actions { display: flex; gap: 6px; flex-shrink: 0; }
 
 .head-actions .ghost-btn { text-decoration: none; line-height: 1.4; }
+
+/* ── 레이저 측정기 ───────────────────────── */
+
+.bt-row { display: flex; align-items: center; gap: 10px; }
+
+.bt-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bt-msg {
+  margin: 0;
+  padding: 9px 11px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-radius: var(--r-sm);
+  word-break: break-all;
+}
+
+.aim-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 10px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-sm);
+}
+
+.aim-row .sub-lead { padding: 0 3px 0 0; }
+
+.aim-row .chip { background: var(--surface); }
+
+.aim-row .chip[aria-pressed="true"] {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}

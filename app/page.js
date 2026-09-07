@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import QuoteSheet from "./components/QuoteSheet";
 import { FREE_SAVE_LIMIT, isPro } from "./lib/plan";
+import { FIELD_LABEL, connectDisto, nextField, supported as btSupported } from "./lib/disto";
 import { PAPERS, PAPER_KEYS, summarize, won } from "./lib/calc";
 import { blankQuote, defaultData, emptyRoom, formatDate, load, newId, save } from "./lib/store";
 
@@ -14,6 +15,15 @@ export default function Home() {
   const [sheetAt, setSheetAt] = useState(null);
   const [toast, setToast] = useState("");
   const toastTimer = useRef(null);
+
+  // 레이저 측정기 (안드로이드·PC 크롬에서만 나타난다)
+  const [btOk, setBtOk] = useState(false);
+  const [bt, setBt] = useState(null); // 연결되면 { name, disconnect }
+  const [btMsg, setBtMsg] = useState("");
+  const [aim, setAim] = useState(null); // { roomId, field }
+  const aimRef = useRef(null);
+  const dataRef = useRef(null);
+  const btRef = useRef(null);
 
   // 저장된 값은 화면이 뜬 뒤에 읽는다
   useEffect(() => {
@@ -26,6 +36,12 @@ export default function Home() {
   }, [data, ready]);
 
   useEffect(() => () => clearTimeout(toastTimer.current), []);
+
+  useEffect(() => setBtOk(btSupported()), []);
+  useEffect(() => { aimRef.current = aim; }, [aim]);
+  useEffect(() => { dataRef.current = data; }, [data]);
+  useEffect(() => { btRef.current = bt; }, [bt]);
+  useEffect(() => () => { if (btRef.current) btRef.current.disconnect(); }, []);
 
   function say(message) {
     setToast(message);
@@ -48,7 +64,10 @@ export default function Home() {
     setData((d) => ({ ...d, quote: { ...d.quote, prices: { ...d.quote.prices, [key]: value } } }));
 
   const patchRoom = (id, patch) =>
-    setQuote({ rooms: quote.rooms.map((r) => (r.id === id ? { ...r, ...patch } : r)) });
+    setData((d) => ({
+      ...d,
+      quote: { ...d.quote, rooms: d.quote.rooms.map((r) => (r.id === id ? { ...r, ...patch } : r)) },
+    }));
 
   const addRoom = () => setQuote({ rooms: [...quote.rooms, emptyRoom(quote.rooms.length)] });
 
@@ -148,6 +167,64 @@ export default function Home() {
     if (typeof window !== "undefined") window.print();
   }
 
+  /* ── 레이저 측정기 ───────────────────────── */
+
+  // 측정기에서 값이 하나 올 때마다 조준한 칸을 채우고 다음 칸으로 넘어간다
+  function onDistance(metres) {
+    const target = aimRef.current;
+    if (!target) return;
+    const current = dataRef.current;
+    if (!current) return;
+    const room = current.quote.rooms.find((r) => r.id === target.roomId);
+    if (!room) return;
+
+    const value = metres.toFixed(2);
+    patchRoom(target.roomId, { [target.field]: value });
+    say(FIELD_LABEL[target.field] + " " + value + "m");
+
+    const next = nextField(room, target.field);
+    setAim(next ? { roomId: target.roomId, field: next } : null);
+  }
+
+  async function connectMeter() {
+    setBtMsg("");
+    try {
+      const conn = await connectDisto({
+        onDistance,
+        onStatus: (m) => setBtMsg(m),
+        onDisconnect: (name) => {
+          setBt(null);
+          setAim(null);
+          setBtMsg(name + " 연결이 끊겼습니다");
+        },
+      });
+      setBt(conn);
+      setBtMsg("");
+      say(conn.name + " 연결됨");
+    } catch (e) {
+      setBt(null);
+      // 사용자가 기기 선택창을 그냥 닫은 경우는 조용히 넘어간다
+      if (e && e.name === "NotFoundError") {
+        setBtMsg("");
+        return;
+      }
+      setBtMsg((e && e.message) || "연결하지 못했습니다");
+    }
+  }
+
+  function disconnectMeter() {
+    if (bt) bt.disconnect();
+    setBt(null);
+    setAim(null);
+    setBtMsg("");
+  }
+
+  function aimAt(roomId, field) {
+    setAim((cur) =>
+      cur && cur.roomId === roomId && cur.field === field ? null : { roomId, field }
+    );
+  }
+
   const canQuote = summary.filledRooms > 0;
 
   /* ── 화면 ────────────────────────────────── */
@@ -221,6 +298,28 @@ export default function Home() {
             </label>
           </div>
         </section>
+
+        {btOk ? (
+          <section className="card">
+            <div className="card-head">
+              <span className="label">레이저 측정기</span>
+              {bt ? <span className="count">연결됨</span> : null}
+              <span className="rule" />
+            </div>
+            <div className="bt-row">
+              <span className="bt-name">{bt ? bt.name : "라이카 디스토 · 블루투스"}</span>
+              <button type="button" className="mini" onClick={bt ? disconnectMeter : connectMeter}>
+                {bt ? "연결 끊기" : "연결하기"}
+              </button>
+            </div>
+            {btMsg ? <p className="bt-msg">{btMsg}</p> : null}
+            <p className="note">
+              {bt
+                ? "방 카드에서 채울 칸을 누른 뒤 측정기 버튼을 누르면 숫자가 들어갑니다. 한 칸이 차면 다음 칸으로 자동으로 넘어갑니다."
+                : "측정기 전원과 블루투스를 켜고 연결하기를 누르세요. 처음이라면 숫자가 제대로 들어오는지 꼭 손으로 잰 값과 맞춰보세요."}
+            </p>
+          </section>
+        ) : null}
 
         <section className="card">
           <div className="card-head">
@@ -313,6 +412,21 @@ export default function Home() {
                         onChange={(e) => patchRoom(room.id, { cd: e.target.value })}
                       />
                     </label>
+                  </div>
+                ) : null}
+
+                {bt ? (
+                  <div className="aim-row">
+                    <span className="sub-lead">조준</span>
+                    {["w", "d", "h"].concat(room.ceiling ? ["cw", "cd"] : []).map((f) => (
+                      <button
+                        key={f} type="button" className="chip"
+                        aria-pressed={!!aim && aim.roomId === room.id && aim.field === f}
+                        onClick={() => aimAt(room.id, f)}
+                      >
+                        {FIELD_LABEL[f]}
+                      </button>
+                    ))}
                   </div>
                 ) : null}
 
