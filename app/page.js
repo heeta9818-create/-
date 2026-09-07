@@ -1,26 +1,28 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const PAPERS = {
-  silk: {
-    label: "실크벽지",
-    widthM: 1.06,
-    rollLenM: 15.6,
-    rollPrice: 25000,
-    labor: 25000,
-  },
-  hapji: {
-    label: "합지벽지",
-    widthM: 0.93,
-    rollLenM: 17.5,
-    rollPrice: 12000,
-    labor: 15000,
-  },
+  silk: { label: "실크벽지", w: 1.06, len: 15.6, roll: 25000, labor: 25000 },
+  hapji: { label: "합지벽지", w: 0.93, len: 17.5, roll: 12000, labor: 15000 },
 };
 
-const PYEONG_M2 = 3.305785;
-const CUT_MARGIN_M = 0.1; // 재단 여유 10cm
+const PYEONG = 3.305785;
+const MARGIN = 0.1; // 폭당 재단 여유 (m)
+const MAX_DRAW = 90; // 화면에 그리는 폭 수 상한
+const STORE_KEY = "dobae.v1";
+
+const DEFAULTS = {
+  paper: "silk",
+  w: "3.6",
+  d: "3.0",
+  h: "2.4",
+  ceil: true,
+  loss: true,
+  pRoll: "25000",
+  pLabor: "25000",
+  pExtra: "3000",
+};
 
 function num(value) {
   const n = parseFloat(value);
@@ -31,283 +33,332 @@ function won(value) {
   return Math.round(value).toLocaleString("ko-KR") + "원";
 }
 
-function calculate(input) {
-  const paper = PAPERS[input.paperKey];
-  const w = num(input.width);
-  const d = num(input.depth);
-  const h = num(input.height);
-
-  const floorArea = w * d;
-  const pyeong = floorArea / PYEONG_M2;
-
-  // 벽면: 둘레를 벽지 폭으로 나눠 필요한 '폭수'를 구한다
-  const perimeter = 2 * (w + d);
-  const wallStripLen = h + CUT_MARGIN_M;
-  const wallStrips = Math.ceil(perimeter / paper.widthM);
-  const wallStripsPerRoll = Math.max(1, Math.floor(paper.rollLenM / wallStripLen));
-  const wallRolls = wallStrips > 0 ? Math.ceil(wallStrips / wallStripsPerRoll) : 0;
-
-  // 천장: 가로 방향으로 폭을 붙이고, 한 폭 길이는 세로 길이
-  let ceilStrips = 0;
-  let ceilRolls = 0;
-  if (input.ceiling && floorArea > 0) {
-    const ceilStripLen = d + CUT_MARGIN_M;
-    ceilStrips = Math.ceil(w / paper.widthM);
-    const perRoll = Math.max(1, Math.floor(paper.rollLenM / ceilStripLen));
-    ceilRolls = Math.ceil(ceilStrips / perRoll);
+// 한 면을 폭으로 나눈다. span = 붙여야 할 가로 길이, drop = 한 폭의 길이
+function splitRun(span, drop, paper) {
+  if (span <= 0 || drop <= 0) {
+    return { strips: 0, rolls: 0, perRoll: 0, remainder: 0, groups: [] };
   }
+  const exact = span / paper.w;
+  const strips = Math.ceil(exact);
+  const remainder = strips - exact; // 마지막 폭이 잘리는 정도
+  const perRoll = Math.max(1, Math.floor(paper.len / drop));
+  const rolls = Math.ceil(strips / perRoll);
 
-  const baseRolls = wallRolls + ceilRolls;
-  const rolls = input.loss ? Math.ceil(baseRolls * 1.1) : baseRolls;
+  const groups = [];
+  for (let left = strips; left > 0; left -= perRoll) {
+    groups.push(Math.min(perRoll, left));
+  }
+  return { strips, rolls, perRoll, remainder, groups };
+}
 
-  const material = rolls * num(input.rollPrice);
-  const labor = pyeong * num(input.laborPerPyeong);
-  const extra = pyeong * num(input.extraPerPyeong);
-  const subtotal = material + labor + extra;
-  const vat = subtotal * 0.1;
+function compute(state) {
+  const paper = PAPERS[state.paper];
+  const w = num(state.w);
+  const d = num(state.d);
+  const h = num(state.h);
+
+  const pyeong = (w * d) / PYEONG;
+  const perimeter = 2 * (w + d);
+
+  const wall = splitRun(perimeter, h + MARGIN, paper);
+  const ceiling = state.ceil ? splitRun(w, d + MARGIN, paper) : null;
+
+  const base = wall.rolls + (ceiling ? ceiling.rolls : 0);
+  const rolls = state.loss ? Math.ceil(base * 1.1) : base;
+
+  const material = rolls * num(state.pRoll);
+  const labor = pyeong * num(state.pLabor);
+  const extra = pyeong * num(state.pExtra);
+  const sub = material + labor + extra;
+  const vat = sub * 0.1;
 
   return {
-    pyeong,
-    perimeter,
-    wallStrips,
-    wallRolls,
-    ceilStrips,
-    ceilRolls,
-    rolls,
-    material,
-    labor,
-    extra,
-    subtotal,
-    vat,
-    total: subtotal + vat,
+    paper, pyeong, perimeter, w, d, h,
+    wall, ceiling, base, rolls,
+    material, labor, extra, vat, total: sub + vat,
   };
 }
 
-export default function Home() {
-  const [width, setWidth] = useState("3.6");
-  const [depth, setDepth] = useState("3.0");
-  const [height, setHeight] = useState("2.4");
-  const [paperKey, setPaperKey] = useState("silk");
-  const [ceiling, setCeiling] = useState(true);
-  const [loss, setLoss] = useState(true);
-  const [rollPrice, setRollPrice] = useState(String(PAPERS.silk.rollPrice));
-  const [laborPerPyeong, setLaborPerPyeong] = useState(String(PAPERS.silk.labor));
-  const [extraPerPyeong, setExtraPerPyeong] = useState("3000");
+function Run({ title, meta, run }) {
+  const cells = [];
+  let drawn = 0;
 
-  function pickPaper(key) {
-    setPaperKey(key);
-    setRollPrice(String(PAPERS[key].rollPrice));
-    setLaborPerPyeong(String(PAPERS[key].labor));
+  for (let g = 0; g < run.groups.length && drawn < MAX_DRAW; g++) {
+    const strips = [];
+    for (let i = 0; i < run.groups[g] && drawn < MAX_DRAW; i++) {
+      drawn++;
+      const isLastCut = drawn === run.strips && run.remainder > 0.02;
+      strips.push(
+        <i key={i} className={isLastCut ? "strip part" : "strip"} />
+      );
+    }
+    cells.push(
+      <div className="roll" key={g}>
+        <div className="roll-strips">{strips}</div>
+        <div className="roll-tag">{g + 1}롤</div>
+      </div>
+    );
   }
 
-  const r = calculate({
-    width,
-    depth,
-    height,
-    paperKey,
-    ceiling,
-    loss,
-    rollPrice,
-    laborPerPyeong,
-    extraPerPyeong,
-  });
+  return (
+    <div className="run">
+      <div className="run-head">
+        <span>
+          {title} <b>{run.strips}폭</b>
+        </span>
+        <span>{meta}</span>
+      </div>
+      <div className="rolls">{cells}</div>
+      {drawn < run.strips ? (
+        <div className="roll-tag" style={{ textAlign: "left" }}>
+          … 외 {run.strips - drawn}폭
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
-  const paper = PAPERS[paperKey];
+export default function Home() {
+  const [state, setState] = useState(DEFAULTS);
+
+  // 저장값은 마운트 후에 읽는다 (서버 렌더 결과와 어긋나지 않게)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORE_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      setState((prev) => {
+        const next = { ...prev };
+        Object.keys(DEFAULTS).forEach((k) => {
+          if (Object.prototype.hasOwnProperty.call(saved, k)) next[k] = saved[k];
+        });
+        return next;
+      });
+    } catch (e) {
+      /* 저장을 못 읽어도 기본값으로 그냥 돈다 */
+    }
+  }, []);
+
+  function update(patch) {
+    setState((prev) => {
+      const next = { ...prev, ...patch };
+      try {
+        localStorage.setItem(STORE_KEY, JSON.stringify(next));
+      } catch (e) {
+        /* 저장 실패는 무시 */
+      }
+      return next;
+    });
+  }
+
+  function pickPaper(key) {
+    update({ paper: key, pRoll: String(PAPERS[key].roll), pLabor: String(PAPERS[key].labor) });
+  }
+
+  const c = compute(state);
+
+  const costRows = [
+    ["바닥 면적", c.pyeong.toFixed(1) + "평", null],
+    ["자재비", won(c.material), c.rolls + "롤"],
+    ["시공비", won(c.labor), c.pyeong.toFixed(1) + "평"],
+    ["부자재", won(c.extra), "풀·초배지"],
+    ["부가세", won(c.vat), "10%"],
+  ];
 
   return (
-    <main className="wrap">
-      <div className="header">
+    <div className="page">
+      <header className="masthead">
+        <div className="eyebrow">실크 · 합지 / 폭수 계산</div>
         <h1>도배 견적 계산기</h1>
-        <p>방 크기만 넣으면 벽지 롤 수와 예상 금액이 바로 나옵니다.</p>
-      </div>
+        <p>방 치수를 재서 넣으면 필요한 폭수·롤 수와 예상 금액이 바로 나옵니다.</p>
+      </header>
 
-      <section className="card">
-        <h2>1. 방 크기</h2>
-        <div className="row">
+      <section className="panel">
+        <div className="panel-title">방 치수</div>
+        <div className="grid-3">
           <div className="field">
-            <label>
-              가로 <span className="hint">m</span>
+            <label htmlFor="w">
+              가로 <span className="unit">M</span>
             </label>
             <input
-              type="number"
-              inputMode="decimal"
-              step="0.1"
-              value={width}
-              onChange={(e) => setWidth(e.target.value)}
+              type="number" id="w" inputMode="decimal" step="0.1" min="0"
+              value={state.w} onChange={(e) => update({ w: e.target.value })}
             />
           </div>
           <div className="field">
-            <label>
-              세로 <span className="hint">m</span>
+            <label htmlFor="d">
+              세로 <span className="unit">M</span>
             </label>
             <input
-              type="number"
-              inputMode="decimal"
-              step="0.1"
-              value={depth}
-              onChange={(e) => setDepth(e.target.value)}
+              type="number" id="d" inputMode="decimal" step="0.1" min="0"
+              value={state.d} onChange={(e) => update({ d: e.target.value })}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="h">
+              천장고 <span className="unit">M</span>
+            </label>
+            <input
+              type="number" id="h" inputMode="decimal" step="0.1" min="0"
+              value={state.h} onChange={(e) => update({ h: e.target.value })}
             />
           </div>
         </div>
-        <div className="field">
-          <label>
-            천장 높이 <span className="hint">m · 보통 2.3~2.5</span>
+      </section>
+
+      <section className="panel">
+        <div className="panel-title">벽지</div>
+        <div className="segmented" role="group" aria-label="벽지 종류">
+          {Object.keys(PAPERS).map((key) => {
+            const p = PAPERS[key];
+            return (
+              <button
+                key={key}
+                type="button"
+                aria-pressed={key === state.paper}
+                onClick={() => pickPaper(key)}
+              >
+                {p.label}
+                <span className="spec">
+                  폭 {Math.round(p.w * 100)}cm · 1롤 {p.len}m
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="toggles">
+          <label className="toggle">
+            <input
+              type="checkbox" checked={state.ceil}
+              onChange={(e) => update({ ceil: e.target.checked })}
+            />
+            천장도 시공
+            <span className="sub">가로 방향 붙임</span>
           </label>
-          <input
-            type="number"
-            inputMode="decimal"
-            step="0.1"
-            value={height}
-            onChange={(e) => setHeight(e.target.value)}
-          />
-        </div>
-      </section>
-
-      <section className="card">
-        <h2>2. 벽지 종류</h2>
-        <div className="seg">
-          {Object.keys(PAPERS).map((key) => (
-            <button
-              key={key}
-              type="button"
-              className={key === paperKey ? "on" : ""}
-              onClick={() => pickPaper(key)}
-            >
-              {PAPERS[key].label}
-            </button>
-          ))}
-        </div>
-        <p className="note" style={{ marginTop: 10 }}>
-          폭 {Math.round(paper.widthM * 100)}cm · 1롤 {paper.rollLenM}m 기준
-        </p>
-      </section>
-
-      <section className="card">
-        <h2>3. 옵션</h2>
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={ceiling}
-            onChange={(e) => setCeiling(e.target.checked)}
-          />
-          천장도 함께 시공
-        </label>
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={loss}
-            onChange={(e) => setLoss(e.target.checked)}
-          />
-          여유분(로스) 10% 추가
-        </label>
-      </section>
-
-      <section className="card">
-        <h2>4. 단가 (직접 수정 가능)</h2>
-        <div className="field">
-          <label>
-            벽지 1롤 단가 <span className="hint">원</span>
+          <label className="toggle">
+            <input
+              type="checkbox" checked={state.loss}
+              onChange={(e) => update({ loss: e.target.checked })}
+            />
+            여유분 추가
+            <span className="sub">+10%</span>
           </label>
-          <input
-            type="number"
-            inputMode="numeric"
-            step="1000"
-            value={rollPrice}
-            onChange={(e) => setRollPrice(e.target.value)}
-          />
-        </div>
-        <div className="row">
-          <div className="field">
-            <label>
-              시공비 <span className="hint">원/평</span>
-            </label>
-            <input
-              type="number"
-              inputMode="numeric"
-              step="1000"
-              value={laborPerPyeong}
-              onChange={(e) => setLaborPerPyeong(e.target.value)}
-            />
-          </div>
-          <div className="field">
-            <label>
-              부자재 <span className="hint">원/평</span>
-            </label>
-            <input
-              type="number"
-              inputMode="numeric"
-              step="500"
-              value={extraPerPyeong}
-              onChange={(e) => setExtraPerPyeong(e.target.value)}
-            />
-          </div>
         </div>
       </section>
 
-      <section className="card result">
-        <span className="badge">예상 견적</span>
-        <h2>계산 결과</h2>
-        <div className="line">
-          <span>바닥 면적</span>
-          <span>{r.pyeong.toFixed(1)}평</span>
+      <section className="panel">
+        <div className="panel-title">폭 나누기</div>
+        <div className="diagram">
+          {c.wall.strips === 0 ? (
+            <div className="empty">방 치수를 넣으면 폭이 어떻게 나뉘는지 그려집니다.</div>
+          ) : (
+            <>
+              <Run
+                title="벽"
+                meta={`둘레 ${c.perimeter.toFixed(1)}m ÷ 폭 ${c.paper.w}m · 1롤 ${c.wall.perRoll}폭`}
+                run={c.wall}
+              />
+              {c.ceiling && c.ceiling.strips > 0 ? (
+                <Run
+                  title="천장"
+                  meta={`가로 ${c.w.toFixed(1)}m ÷ 폭 ${c.paper.w}m · 1롤 ${c.ceiling.perRoll}폭`}
+                  run={c.ceiling}
+                />
+              ) : null}
+            </>
+          )}
         </div>
-        <div className="line">
-          <span>벽 둘레</span>
-          <span>{r.perimeter.toFixed(1)}m</span>
-        </div>
-        <div className="line">
-          <span>벽 폭수</span>
+        <div className="legend">
           <span>
-            {r.wallStrips}폭 ({r.wallRolls}롤)
+            <i className="swatch full" /> 온전한 폭
           </span>
-        </div>
-        {ceiling ? (
-          <div className="line">
-            <span>천장 폭수</span>
-            <span>
-              {r.ceilStrips}폭 ({r.ceilRolls}롤)
-            </span>
-          </div>
-        ) : null}
-        <div className="line">
-          <span>필요 벽지</span>
-          <span>{r.rolls}롤</span>
-        </div>
-        <div className="line">
-          <span>자재비</span>
-          <span>{won(r.material)}</span>
-        </div>
-        <div className="line">
-          <span>시공비</span>
-          <span>{won(r.labor)}</span>
-        </div>
-        <div className="line">
-          <span>부자재</span>
-          <span>{won(r.extra)}</span>
-        </div>
-        <div className="line">
-          <span>부가세 (10%)</span>
-          <span>{won(r.vat)}</span>
-        </div>
-        <div className="line total">
-          <span>총 예상 금액</span>
-          <span>{won(r.total)}</span>
+          <span>
+            <i className="swatch part" /> 마지막 자투리 폭
+          </span>
+          <span>막대 한 칸 = 1폭</span>
         </div>
       </section>
 
-      <section className="card">
-        <p className="note">
-          <b>계산 방법</b>
-          <br />
-          벽 둘레를 벽지 폭으로 나눠 필요한 폭수를 구하고, 1롤에서 몇 폭이
-          나오는지로 롤 수를 계산합니다. 재단 여유는 폭당 10cm를 더합니다.
-          <br />
-          <br />
-          <b>참고</b> — 문·창문 공제, 몰딩, 벽면 상태(곰팡이·단차), 계단·복도
-          같은 현장 조건은 반영되지 않습니다. 실제 견적은 현장 확인 후
-          달라질 수 있습니다.
+      <section className="panel">
+        <div className="panel-title">견적</div>
+
+        <div className="headline">
+          <div className="n">
+            {c.rolls}
+            <span>롤</span>
+          </div>
+          <div className="cap">
+            {state.loss && c.rolls > c.base
+              ? `필요한 벽지 · 여유분 포함 (기본 ${c.base}롤)`
+              : "필요한 벽지"}
+          </div>
+        </div>
+
+        <div className="rows">
+          {costRows.map(([k, v, note]) => (
+            <div className="row" key={k}>
+              <span className="k">
+                {k}
+                {note ? <em>{note}</em> : null}
+              </span>
+              <span className="v">{v}</span>
+            </div>
+          ))}
+          <div className="row sum">
+            <span className="k">총 예상 금액</span>
+            <span className="v">{won(c.total)}</span>
+          </div>
+        </div>
+
+        <details>
+          <summary>단가 고치기</summary>
+          <div className="price-body">
+            <div className="field">
+              <label htmlFor="pRoll">
+                벽지 1롤 <span className="unit">원</span>
+              </label>
+              <input
+                type="number" id="pRoll" inputMode="numeric" step="1000" min="0"
+                value={state.pRoll} onChange={(e) => update({ pRoll: e.target.value })}
+              />
+            </div>
+            <div className="grid-2">
+              <div className="field">
+                <label htmlFor="pLabor">
+                  시공비 <span className="unit">원/평</span>
+                </label>
+                <input
+                  type="number" id="pLabor" inputMode="numeric" step="1000" min="0"
+                  value={state.pLabor} onChange={(e) => update({ pLabor: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="pExtra">
+                  부자재 <span className="unit">원/평</span>
+                </label>
+                <input
+                  type="number" id="pExtra" inputMode="numeric" step="500" min="0"
+                  value={state.pExtra} onChange={(e) => update({ pExtra: e.target.value })}
+                />
+              </div>
+            </div>
+          </div>
+        </details>
+      </section>
+
+      <section className="panel notes">
+        <h2>계산 방식</h2>
+        <p>
+          벽 둘레를 벽지 폭으로 나눠 <b>필요한 폭수</b>를 구하고, 1롤에서 몇 폭이 나오는지로{" "}
+          <b>롤 수</b>를 냅니다. 한 폭마다 재단 여유 <code>10cm</code>를 더해 자릅니다. 천장은
+          가로 방향으로 붙이고, 한 폭의 길이를 세로 치수로 잡습니다.
+        </p>
+        <p>
+          <b>빠진 것</b> — 문·창문 공제, 몰딩, 벽면 상태(곰팡이·단차·석고 보수), 계단·복도처럼
+          층고가 다른 구간, 걸레받이. 실제 견적은 현장을 보고 잡으셔야 합니다. 여기 나오는 금액은{" "}
+          <b>현장 나가기 전 대략 잡는 용도</b>입니다.
         </p>
       </section>
-    </main>
+    </div>
   );
 }
