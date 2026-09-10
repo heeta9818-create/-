@@ -23,7 +23,7 @@ export function emptyRoom(index) {
 
 export function blankQuote() {
   return {
-    customer: { name: "", site: "" },
+    customer: { name: "", site: "", phone: "" },
     // 첫 방은 아이디를 고정한다. 서버에서 그린 화면과 브라우저가 어긋나지 않게.
     rooms: [{ ...emptyRoom(0), id: "room-1", w: "3.6", d: "3.0" }],
     prices: { silk: "25000", hapji: "12000" },

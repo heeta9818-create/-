@@ -22,6 +22,7 @@ export default function Home() {
 
   // 레이저 측정기 (안드로이드·PC 크롬에서만 나타난다)
   const [btOk, setBtOk] = useState(false);
+  const [contactOk, setContactOk] = useState(false); // 폰 연락처에서 고르기
   const [bt, setBt] = useState(null); // 연결되면 { name, disconnect }
   const [btMsg, setBtMsg] = useState("");
   const [meter, setMeter] = useState(null); // { profile, listening, learned }
@@ -48,6 +49,9 @@ export default function Home() {
   useEffect(() => () => clearTimeout(toastTimer.current), []);
 
   useEffect(() => setBtOk(btSupported()), []);
+  useEffect(() => {
+    setContactOk(typeof navigator !== "undefined" && !!(navigator.contacts && navigator.contacts.select));
+  }, []);
   useEffect(() => { aimRef.current = aim; }, [aim]);
   useEffect(() => { dataRef.current = data; }, [data]);
   useEffect(() => { btRef.current = bt; }, [bt]);
@@ -231,6 +235,27 @@ export default function Home() {
     say("기억을 지웠습니다. 다시 연결해 주세요");
   }
 
+  /* ── 연락처에서 고르기 ───────────────────── */
+
+  // 폰이 연락처 목록을 띄우고, 고른 한 명만 넘겨준다.
+  // 앱이 연락처 전체를 가져가는 것이 아니라 그때그때 고르는 방식이다.
+  async function pickContact() {
+    try {
+      const picked = await navigator.contacts.select(["name", "tel"], { multiple: false });
+      if (!picked || !picked.length) return;
+      const person = picked[0];
+      const name = (person.name && person.name[0]) || "";
+      const tel = (person.tel && person.tel[0]) || "";
+      setCustomer({
+        name: name || quote.customer.name,
+        phone: tel || quote.customer.phone || "",
+      });
+      say(name ? name + "님을 넣었습니다" : "연락처를 넣었습니다");
+    } catch (e) {
+      say("연락처를 가져오지 못했습니다");
+    }
+  }
+
   /* ── 메모장 붙여넣기 ─────────────────────── */
 
   // 붙여넣는 즉시 방 목록에 반영한다. 버튼을 한 번 더 누르게 하지 않는다.
@@ -322,6 +347,11 @@ export default function Home() {
           <div className="card-head">
             <span className="label">현장</span>
             <span className="rule" />
+            {contactOk ? (
+              <button type="button" className="mini" onClick={pickContact}>
+                연락처에서
+              </button>
+            ) : null}
             <button type="button" className="mini" onClick={startNew}>
               새 견적
             </button>
@@ -335,13 +365,21 @@ export default function Home() {
               />
             </label>
             <label className="field">
-              <span>현장</span>
+              <span>연락처</span>
               <input
-                className="in" type="text" placeholder="○○아파트 101동"
-                value={quote.customer.site} onChange={(e) => setCustomer({ site: e.target.value })}
+                className="in" type="tel" placeholder="010-0000-0000"
+                value={quote.customer.phone || ""}
+                onChange={(e) => setCustomer({ phone: e.target.value })}
               />
             </label>
           </div>
+          <label className="field">
+            <span>현장</span>
+            <input
+              className="in" type="text" placeholder="○○아파트 101동 1203호"
+              value={quote.customer.site} onChange={(e) => setCustomer({ site: e.target.value })}
+            />
+          </label>
         </section>
 
         {btOk ? (
@@ -822,6 +860,7 @@ export default function Home() {
           summary={summary}
           issuedAt={sheetAt}
           text={shareText()}
+          contact={{ name: quote.customer.name, phone: quote.customer.phone }}
           onToast={say}
           onClose={() => setSheetAt(null)}
           onPrint={printSheet}
