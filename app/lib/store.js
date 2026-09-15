@@ -10,6 +10,8 @@ export function emptyRoom(index) {
   return {
     id: newId(),
     name: index === 0 ? "안방" : "방 " + (index + 1),
+    mode: "size", // "size" = 가로·세로, "strips" = 250x2 같은 폭 표기
+    groups: [],
     w: "",
     d: "",
     h: "2.4",

@@ -37,12 +37,50 @@ function tidy(metres) {
   return String(Math.round(metres * 100) / 100);
 }
 
+// "250x2" = 250cm 벽지 2장. 곱하기가 아니다.
+// 앞 숫자가 소수점 없는 100 이상(=cm 길이), 뒷 숫자가 60 이하 정수(=장수)일 때만 이렇게 읽는다.
+// "폭" "장" "개" 가 붙어 있으면 소수여도 그대로 믿는다. (2.5x8폭)
+const STRIP_PLAIN = /^(천장|천|벽)?(\d{2,4})x(\d{1,3})(폭|장|개)?$/;
+const STRIP_MARKED = /^(천장|천|벽)?(\d+(?:[.,]\d+)?)x(\d{1,3})(폭|장|개)$/;
+
+function readStrip(token) {
+  const marked = token.match(STRIP_MARKED);
+  const plain = token.match(STRIP_PLAIN);
+  const hit = marked || plain;
+  if (!hit) return null;
+
+  const len = toMetres(hit[2], "");
+  const count = parseInt(hit[3], 10);
+  if (len === null || !count || count < 1 || count > 60) return null;
+
+  // 표시만 붙은 게 아니라면 앞 숫자는 cm로 적은 길이여야 한다
+  if (!marked && parseFloat(hit[2]) < 100) return null;
+  // 벽지 한 폭 길이로 말이 되는 범위
+  if (len < 0.3 || len > 8) return null;
+
+  return { len: tidy(len), count: String(count), part: hit[1] === "벽" ? "벽" : hit[1] ? "천" : "" };
+}
+
 function parseLine(line, index) {
   // "거실5.0", "안방360" 처럼 붙여 쓴 경우 떼어 준다.
   // "방1" 처럼 이름에 붙은 한 자리 숫자는 건드리지 않는다.
-  const spaced = line.replace(/([가-힣A-Za-z])(?=\d+[.,]\d|\d{3,})/g, "$1 ");
+  // "250 x 2" 처럼 띄어 쓴 것도 한 덩어리로 붙인다
+  const joined = line.replace(/\s*[x*×]\s*/gi, "x");
 
-  const tokens = spaced.split(/[\s,x*×/·|\-~]+/i).filter(Boolean);
+  // 폭 표기(250x2, 천250x6)를 먼저 걷어낸다.
+  // 글자와 숫자를 떼어내기 전에 봐야 "천250x6"의 "천"이 살아남는다.
+  const groups = [];
+  const rest = [];
+  joined.split(/[\s,·|~]+/).filter(Boolean).forEach((chunk) => {
+    const strip = readStrip(chunk);
+    if (strip) groups.push(strip);
+    else rest.push(chunk);
+  });
+
+  const tokens = rest
+    .map((chunk) => chunk.replace(/([가-힣A-Za-z])(?=\d+[.,]\d|\d{3,})/g, "$1 "))
+    .flatMap((chunk) => chunk.split(/[\sx*×/\-]+/i))
+    .filter(Boolean);
 
   const dims = [];
   const words = [];
@@ -58,7 +96,7 @@ function parseLine(line, index) {
     words.push(token);
   });
 
-  if (!dims.length) return null;
+  if (!groups.length && !dims.length) return null;
 
   const text = line.replace(/\s+/g, "");
   const paper = /합지/.test(text) ? "hapji" : "silk";
@@ -84,8 +122,22 @@ function parseLine(line, index) {
       .join(" ")
       .trim() || "방 " + (index + 1);
 
+  if (groups.length) {
+    return {
+      name,
+      mode: "strips",
+      groups,
+      w: "", d: "", h: "", cw: "", cd: "",
+      ceiling: false,
+      walls: true,
+      paper,
+    };
+  }
+
   const room = {
     name,
+    mode: "size",
+    groups: [],
     w: tidy(dims[0]),
     d: dims.length > 1 ? tidy(dims[1]) : "",
     h: dims.length > 2 ? tidy(dims[2]) : DEFAULT_HEIGHT,
@@ -113,7 +165,9 @@ export function parseMemo(text) {
     .filter(Boolean);
 }
 
-export const SAMPLE = `안방 3.6 x 3.0 x 2.4
+export const SAMPLE = `안방 250x8
+거실 250x12 천250x6
+안방 3.6 x 3.0 x 2.4
 작은방 3.2*2.7
 거실 5m 4m 2.4m
 주방 280 240 천장제외

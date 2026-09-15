@@ -90,6 +90,36 @@ export default function Home() {
     setQuote({ rooms: rest.length ? rest : [emptyRoom(0)] });
   };
 
+  // 폭 표기(250x2) 묶음 다루기
+  const patchGroups = (id, make) =>
+    setData((d) => ({
+      ...d,
+      quote: {
+        ...d.quote,
+        rooms: d.quote.rooms.map((r) =>
+          r.id === id ? { ...r, groups: make(r.groups || []) } : r
+        ),
+      },
+    }));
+
+  const setGroup = (id, at, patch) =>
+    patchGroups(id, (gs) => gs.map((g, i) => (i === at ? { ...g, ...patch } : g)));
+
+  const addGroup = (id) =>
+    patchGroups(id, (gs) => gs.concat({ len: "2.5", count: "", part: "" }));
+
+  const dropGroup = (id, at) => patchGroups(id, (gs) => gs.filter((g, i) => i !== at));
+
+  function setMode(room, mode) {
+    if (room.mode === mode) return;
+    patchRoom(room.id, {
+      mode,
+      groups: mode === "strips" && !(room.groups || []).length
+        ? [{ len: "2.5", count: "", part: "" }]
+        : room.groups || [],
+    });
+  }
+
   /* ── 견적 보관 ───────────────────────────── */
 
   function saveQuote() {
@@ -136,6 +166,14 @@ export default function Home() {
     summary.rooms
       .filter((r) => r.m.strips > 0)
       .forEach(({ room, m }) => {
+        if (m.mode === "strips") {
+          lines.push(
+            "· " + (room.name || "방") + " " +
+            m.groups.map((g) => (g.part || "벽") + " " + g.len + "m×" + g.count + "장").join(" + ") +
+            " (" + m.strips + "폭)"
+          );
+          return;
+        }
         const ceilNote =
           room.walls === false
             ? " (천장만)"
@@ -454,8 +492,13 @@ export default function Home() {
                       <span className="sub-lead">읽은 방 {memoPreview.length}개</span>
                       {memoPreview.map((r, i) => (
                         <span className="memo-line" key={i}>
-                          <b>{r.name}</b> {r.w}×{r.d || "?"}×{r.h}
-                          {r.walls === false
+                          <b>{r.name}</b>{" "}
+                          {r.mode === "strips"
+                            ? r.groups.map((g) => (g.part || "벽") + " " + g.len + "m×" + g.count + "장").join(" + ")
+                            : r.w + "×" + (r.d || "?") + "×" + r.h}
+                          {r.mode === "strips"
+                            ? ""
+                            : r.walls === false
                             ? " · 천장만"
                             : r.ceiling
                               ? r.cw
@@ -529,6 +572,42 @@ export default function Home() {
                   </button>
                 </div>
 
+                {room.mode === "strips" ? (
+                  <div className="strips">
+                    {(room.groups || []).map((g, i) => (
+                      <div className="strip-row" key={i}>
+                        <input
+                          className="in num" type="number" inputMode="decimal" step="0.1" min="0"
+                          placeholder="2.5" value={g.len} aria-label="벽지 길이"
+                          onChange={(e) => setGroup(room.id, i, { len: e.target.value })}
+                        />
+                        <span className="strip-x">m ×</span>
+                        <input
+                          className="in num" type="number" inputMode="numeric" step="1" min="0"
+                          placeholder="0" value={g.count} aria-label="장수"
+                          onChange={(e) => setGroup(room.id, i, { count: e.target.value })}
+                        />
+                        <span className="strip-x">장</span>
+                        <button
+                          type="button" className="chip"
+                          aria-pressed={g.part === "천"}
+                          onClick={() => setGroup(room.id, i, { part: g.part === "천" ? "" : "천" })}
+                        >
+                          천
+                        </button>
+                        <button
+                          type="button" className="icon-btn" aria-label="이 폭 지우기"
+                          onClick={() => dropGroup(room.id, i)}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                    <button type="button" className="add-room" onClick={() => addGroup(room.id)}>
+                      ＋ 폭 추가
+                    </button>
+                  </div>
+                ) : (
                 <div className="grid3">
                   <label className="field">
                     <span>가로 <i>M</i></span>
@@ -555,6 +634,7 @@ export default function Home() {
                     />
                   </label>
                 </div>
+                )}
 
                 <div className="room-opts">
                   {PAPER_KEYS.map((key) => (
@@ -567,23 +647,42 @@ export default function Home() {
                     </button>
                   ))}
                   <span className="chip-gap" />
+                  {room.mode === "strips" ? null : (
+                    <>
+                      <button
+                        type="button" className="chip"
+                        aria-pressed={room.walls !== false}
+                        onClick={() => patchRoom(room.id, { walls: room.walls === false })}
+                      >
+                        벽
+                      </button>
+                      <button
+                        type="button" className="chip"
+                        aria-pressed={!!room.ceiling}
+                        onClick={() => patchRoom(room.id, { ceiling: !room.ceiling })}
+                      >
+                        천장
+                      </button>
+                      <span className="chip-gap" />
+                    </>
+                  )}
                   <button
                     type="button" className="chip"
-                    aria-pressed={room.walls !== false}
-                    onClick={() => patchRoom(room.id, { walls: room.walls === false })}
+                    aria-pressed={room.mode !== "strips"}
+                    onClick={() => setMode(room, "size")}
                   >
-                    벽
+                    치수
                   </button>
                   <button
                     type="button" className="chip"
-                    aria-pressed={!!room.ceiling}
-                    onClick={() => patchRoom(room.id, { ceiling: !room.ceiling })}
+                    aria-pressed={room.mode === "strips"}
+                    onClick={() => setMode(room, "strips")}
                   >
-                    천장
+                    폭수
                   </button>
                 </div>
 
-                {room.ceiling ? (
+                {room.mode !== "strips" && room.ceiling ? (
                   <div className="sub-grid">
                     <span className="sub-lead">천장</span>
                     <label className="field">
@@ -605,7 +704,7 @@ export default function Home() {
                   </div>
                 ) : null}
 
-                {bt ? (
+                {bt && room.mode !== "strips" ? (
                   <div className="aim-row">
                     <span className="sub-lead">조준</span>
                     {(room.walls === false ? [] : ["w", "d", "h"])
@@ -623,7 +722,21 @@ export default function Home() {
                 ) : null}
 
                 <div className="room-out">
-                  {m.strips > 0 ? (
+                  {m.mode === "strips" ? (
+                    m.strips > 0 ? (
+                      <>
+                        <span>
+                          <b>{m.strips}폭</b>
+                        </span>
+                        <span>벽지 {m.paperPyeong.toFixed(1)}평</span>
+                        <span>
+                          약 <b>{m.rollsExact.toFixed(1)}롤</b>
+                        </span>
+                      </>
+                    ) : (
+                      <span className="none">벽지 길이와 장수를 넣어 주세요</span>
+                    )
+                  ) : m.strips > 0 ? (
                     <>
                       <span>바닥 {m.pyeong.toFixed(1)}평</span>
                       <span>둘레 {m.perimeter.toFixed(1)}m</span>

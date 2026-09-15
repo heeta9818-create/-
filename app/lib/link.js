@@ -23,7 +23,7 @@ function unb64url(text) {
 // 자리를 아끼려고 이름표 없이 순서대로만 담는다
 export function pack(shop, quote, issuedAt) {
   const rooms = quote.rooms
-    .filter((r) => r.w || r.d)
+    .filter((r) => r.w || r.d || (r.mode === "strips" && (r.groups || []).length))
     .map((r) => [
       r.name || "",
       r.w || "",
@@ -34,6 +34,8 @@ export function pack(shop, quote, issuedAt) {
       r.ceiling ? 1 : 0,
       r.walls === false ? 0 : 1,
       r.paper === "hapji" ? 1 : 0,
+      r.mode === "strips" ? 1 : 0,
+      r.mode === "strips" ? (r.groups || []).map((g) => [g.len, g.count, g.part || ""]) : 0,
     ]);
 
   return JSON.stringify([
@@ -78,6 +80,10 @@ export function unpack(json) {
         ceiling: !!r[6],
         walls: r[7] !== 0,
         paper: r[8] ? "hapji" : "silk",
+        mode: r[9] ? "strips" : "size",
+        groups: Array.isArray(r[10])
+          ? r[10].map((g) => ({ len: g[0], count: g[1], part: g[2] || "" }))
+          : [],
       })),
     },
   };

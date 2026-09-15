@@ -35,8 +35,50 @@ function splitRun(span, drop, paper) {
   };
 }
 
+const NONE = { strips: 0, perRoll: 0, remainder: 0 };
+
+// 폭으로 적은 방. "250x2" = 250cm 짜리 폭 2장.
+// 적어둔 길이는 이미 재단해서 자를 길이로 본다(여유분을 또 붙이지 않는다).
+function measureStrips(room, paper) {
+  const groups = (room.groups || [])
+    .map((g) => ({
+      len: num(g.len),
+      count: Math.floor(num(g.count)),
+      part: g.part || "",
+    }))
+    .filter((g) => g.len > 0 && g.count > 0);
+
+  let strips = 0;
+  let rollsExact = 0;
+  groups.forEach((g) => {
+    strips += g.count;
+    rollsExact += g.count / Math.max(1, Math.floor(paper.len / g.len));
+  });
+
+  return {
+    paper,
+    mode: "strips",
+    groups,
+    w: 0, d: 0, h: 0, cw: 0, cd: 0,
+    area: 0, pyeong: 0, perimeter: 0,
+    ceilArea: 0, ceilPyeong: 0,
+    wall: { strips, perRoll: 0, remainder: 0 },
+    ceiling: NONE,
+    strips,
+    rollsExact,
+    // 벽지가 실제로 덮는 면적 (바닥 평이 아니다)
+    paperArea: groups.reduce((sum, g) => sum + g.count * paper.w * g.len, 0),
+    paperPyeong: groups.reduce((sum, g) => sum + g.count * paper.w * g.len, 0) / PYEONG,
+  };
+}
+
 // 방 하나의 물량
 export function measureRoom(room) {
+  if (room.mode === "strips") return measureStrips(room, paperOf(room.paper));
+  return measureSize(room);
+}
+
+function measureSize(room) {
   const paper = paperOf(room.paper);
   const w = num(room.w);
   const d = num(room.d);
@@ -51,9 +93,8 @@ export function measureRoom(room) {
   const cw = num(room.cw) || w;
   const cd = num(room.cd) || d;
 
-  const none = { strips: 0, perRoll: 0, remainder: 0 };
-  const wall = room.walls === false ? none : splitRun(perimeter, h + MARGIN, paper);
-  const ceiling = room.ceiling ? splitRun(cw, cd + MARGIN, paper) : none;
+  const wall = room.walls === false ? NONE : splitRun(perimeter, h + MARGIN, paper);
+  const ceiling = room.ceiling ? splitRun(cw, cd + MARGIN, paper) : NONE;
 
   // 롤은 방마다 올림하지 않는다. 남은 자투리는 다음 방에서 쓰므로
   // 소수로 쌓아뒀다가 현장 전체에서 한 번만 올린다.
@@ -62,7 +103,8 @@ export function measureRoom(room) {
     (ceiling.perRoll ? ceiling.strips / ceiling.perRoll : 0);
 
   return {
-    paper, w, d, h, cw, cd, area, pyeong, perimeter,
+    paper, mode: "size", groups: [], paperArea: 0, paperPyeong: 0,
+    w, d, h, cw, cd, area, pyeong, perimeter,
     ceilArea: room.ceiling ? cw * cd : 0,
     ceilPyeong: room.ceiling ? (cw * cd) / PYEONG : 0,
     wall, ceiling,
@@ -114,5 +156,7 @@ export function summarize(state) {
     pyeong: rooms.reduce((sum, r) => sum + r.m.pyeong, 0),
     rollCount: materials.reduce((sum, b) => sum + b.rolls, 0),
     filledRooms: rooms.filter((r) => r.m.strips > 0).length,
+    // 폭으로만 적은 견적이면 바닥 면적이 없다
+    anyArea: rooms.some((r) => r.m.strips > 0 && r.m.pyeong > 0),
   };
 }

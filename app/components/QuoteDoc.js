@@ -8,8 +8,10 @@ import { formatDate, quoteNo } from "../lib/store";
 // 견적서 종이 한 장. 앱 안에서도, 링크로 열었을 때도 같은 것을 쓴다.
 const QuoteDoc = forwardRef(function QuoteDoc({ pro, shop, quote, summary, issuedAt }, ref) {
   const rooms = summary.rooms.filter((r) => r.m.strips > 0);
+  const showArea = summary.anyArea; // 폭으로만 적은 견적이면 면적 칸을 뺀다
 
   function scope(room) {
+    if (room.mode === "strips") return "";
     if (room.walls === false) return " (천장만)";
     return room.ceiling ? " (천장 포함)" : " (벽만)";
   }
@@ -50,8 +52,8 @@ const QuoteDoc = forwardRef(function QuoteDoc({ pro, shop, quote, summary, issue
             <thead>
               <tr>
                 <th>구분</th>
-                <th>크기 (m)</th>
-                <th className="n">면적</th>
+                <th>규격</th>
+                {showArea ? <th className="n">면적</th> : null}
                 <th className="n">벽지</th>
                 <th className="n">폭수</th>
               </tr>
@@ -64,17 +66,30 @@ const QuoteDoc = forwardRef(function QuoteDoc({ pro, shop, quote, summary, issue
                     {scope(room)}
                   </td>
                   <td className="n">
-                    {m.w} × {m.d} × {m.h}
-                    {room.ceiling && (m.cw !== m.w || m.cd !== m.d) ? (
+                    {m.mode === "strips" ? (
+                      m.groups.map((g, i) => (
+                        <span key={i} className="strip-note">
+                          {g.part ? g.part + " " : ""}
+                          {g.len}m × {g.count}장
+                        </span>
+                      ))
+                    ) : (
                       <>
-                        <br />
-                        <small>
-                          천장 {m.cw} × {m.cd}
-                        </small>
+                        {m.w} × {m.d} × {m.h}
+                        {room.ceiling && (m.cw !== m.w || m.cd !== m.d) ? (
+                          <>
+                            <br />
+                            <small>
+                              천장 {m.cw} × {m.cd}
+                            </small>
+                          </>
+                        ) : null}
                       </>
-                    ) : null}
+                    )}
                   </td>
-                  <td className="n">{m.pyeong.toFixed(1)}평</td>
+                  {showArea ? (
+                    <td className="n">{m.pyeong > 0 ? m.pyeong.toFixed(1) + "평" : "—"}</td>
+                  ) : null}
                   <td className="n">{m.paper.label}</td>
                   <td className="n">{m.strips}폭</td>
                 </tr>
@@ -85,9 +100,11 @@ const QuoteDoc = forwardRef(function QuoteDoc({ pro, shop, quote, summary, issue
                 <td colSpan={2}>
                   <b>합계 {rooms.length}개소</b>
                 </td>
-                <td className="n">
-                  <b>{summary.pyeong.toFixed(1)}평</b>
-                </td>
+                {showArea ? (
+                  <td className="n">
+                    <b>{summary.pyeong.toFixed(1)}평</b>
+                  </td>
+                ) : null}
                 <td className="n" />
                 <td className="n">
                   <b>{rooms.reduce((s, r) => s + r.m.strips, 0)}폭</b>
