@@ -162,6 +162,30 @@ export default function QuoteSheet({
         issuedAt={issuedAt}
       />
 
+      <div className="linkbar no-print">
+        <span className="linkbar-lead">견적서 링크</span>
+        {link ? (
+          <>
+            <input
+              className="linkbar-url"
+              readOnly
+              value={link}
+              aria-label="견적서 링크"
+              onFocus={(e) => e.target.select()}
+            />
+            <button
+              type="button"
+              className="mini"
+              onClick={() => copy(link, "링크를 복사했습니다")}
+            >
+              복사
+            </button>
+          </>
+        ) : (
+          <span className="linkbar-wait">만드는 중…</span>
+        )}
+      </div>
+
       {pickOpen ? (
         <div className="picker no-print">
           {why ? <p className="picker-why">{why}</p> : null}
